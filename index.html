@@ -85,9 +85,9 @@ main { max-width: 640px; margin: 0 auto; padding: 6px 16px 24px; }
 .tile .sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .bar { margin-top: 10px; }
 .down { color: var(--good) !important; } .up { color: var(--warn) !important; }
-.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
 .actions button {
-  font: inherit; font-weight: 700; font-size: 14px; border: 0; border-radius: 14px; min-height: 64px; padding: 8px;
+  font: inherit; font-weight: 700; font-size: 14px; border: 0; border-radius: 14px; min-height: 60px; padding: 8px;
   background: var(--card-2); color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
 }
 .actions button svg { width: 22px; height: 22px; color: var(--accent); }
@@ -126,7 +126,7 @@ ul.list li { display: flex; align-items: center; gap: 10px; padding: 12px 0; bor
 ul.list li:first-child { border-top: 0; }
 ul.list .grow { flex: 1; min-width: 0; }
 ul.list .num { font-family: var(--num); font-size: 22px; font-weight: 700; white-space: nowrap; }
-.x { border: 0; background: none; color: var(--ink-3); font-size: 22px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; flex: none; }
+.x { border: 0; background: none; color: var(--ink-3); font-size: 22px; width: 36px; height: 40px; border-radius: 50%; cursor: pointer; flex: none; }
 .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--card-2); color: var(--ink-2); vertical-align: 1px; }
 .tag.red { background: var(--accent-soft); color: #ff6b76; }
 .tag.good { background: rgba(51,209,122,.15); color: var(--good); }
@@ -240,6 +240,7 @@ nav.tabs button.on svg { color: var(--accent); }
 <div class="sheet-bg" id="sheetBg" data-act="closeSheet"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="dl"></div>
 
 <script>
 "use strict";
@@ -247,15 +248,25 @@ nav.tabs button.on svg { color: var(--accent); }
 // Storage
 // =====================================================================
 const KEY = "healthTracker.v1";
+const AREAS = { core: "Core", lower: "Lower body", upper: "Upper body" };
 const DEFAULTS = {
-  v: 2,
+  v: 3,
   settings: {
     heightIn: null, startWeight: 220, startDate: "2026-08-18", goals: [207, 205, 197],
-    cardioTarget: 150, fastTarget: 16, plankGoal: 60, pushupGoal: 25,
+    cardioTarget: 300, strengthTarget: 90, fastTarget: 16,
+    // suggestions shown when logging; names you type in get added
+    exercises: {
+      core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
+      lower: ["Bodyweight squats", "Goblet squats", "Lunges", "Step-ups", "Glute bridges", "Hip thrusts", "Romanian deadlifts", "Leg press", "Leg curls", "Leg extensions", "Calf raises"],
+      upper: ["Push-ups", "Bench press", "Dumbbell press", "Shoulder press", "Lateral raises", "Rows", "Lat pulldown", "Pull-ups", "Bicep curls", "Tricep extensions", "Chest fly"]
+    },
+    // exercise goals: {id, area, ex, sets, reps, sec, weight}
+    liftGoals: [],
     shouldersCleared: false, clearedDate: null, lastBackup: null, lastSync: null
   },
-  weights: [], meals: [], fasts: [], cheats: [], cardio: [], planks: [], pushups: [], labs: []
+  weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: []
 };
+const LEGACY = ["planks", "pushups"]; // v2 collections, folded into core/strength by migrate()
 // Readings you gave me to start with (lbs). Added once; never overwrite an existing reading.
 const BACKFILL = [
   ["2026-08-18", 220.0, "other", "Starting weight, doctor's office"],
@@ -273,7 +284,7 @@ function load() {
   try { saved = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   const db = JSON.parse(JSON.stringify(DEFAULTS));
   if (saved && typeof saved === "object") {
-    for (const k of Object.keys(DEFAULTS)) if (Array.isArray(DEFAULTS[k]) && Array.isArray(saved[k])) db[k] = saved[k];
+    for (const k of Object.keys(DEFAULTS).concat(LEGACY)) if ((Array.isArray(DEFAULTS[k]) || LEGACY.includes(k)) && Array.isArray(saved[k])) db[k] = saved[k];
     Object.assign(db.settings, saved.settings || {});
     db.v = saved.v || 1;
   } else db.v = 1;
@@ -287,6 +298,22 @@ function migrate(db) {
     db.settings.startDate = db.settings.startDate || "2026-08-18";
     db.v = 2;
   }
+  if (db.v < 3) {
+    const s = db.settings;
+    s.cardioTarget = 300;
+    for (const p of db.planks || []) db.core.push({ id: p.id || uid(), date: p.date, ex: "Plank", sets: 1, reps: null, sec: p.sec });
+    for (const p of db.pushups || []) db.strength.push({ id: p.id || uid(), date: p.date, area: "upper", ex: "Push-ups", sets: 1, reps: p.reps, weight: null, min: null });
+    if (!s.liftGoals.length) s.liftGoals = [
+      { id: uid(), area: "core", ex: "Plank", sets: 1, reps: null, sec: s.plankGoal || 60, weight: null },
+      { id: uid(), area: "upper", ex: "Push-ups", sets: 1, reps: s.pushupGoal || 25, sec: null, weight: null }
+    ];
+    delete db.planks; delete db.pushups; delete s.plankGoal; delete s.pushupGoal;
+    db.v = 3;
+  }
+  const ex = JSON.parse(JSON.stringify(DEFAULTS.settings.exercises));
+  for (const a of Object.keys(AREAS)) if (db.settings.exercises && Array.isArray(db.settings.exercises[a])) ex[a] = db.settings.exercises[a];
+  db.settings.exercises = ex;
+  if (!Array.isArray(db.settings.liftGoals)) db.settings.liftGoals = [];
   if (!db.settings.backfilled) {
     for (const [date, w, type, note] of BACKFILL)
       if (!db.weights.some(x => x.date === date && x.type === type))
@@ -741,6 +768,147 @@ function labGroups() {
 const ORDER = { bad: 0, warn: 1, none: 2, good: 3 };
 
 // =====================================================================
+// Entries: field specs shared by the add forms and the edit sheet
+// =====================================================================
+const CARDIO_TYPES = ["Incline walk", "Peloton ride", "Other cardio"];
+const exKey = s => String(s || "").trim().toLowerCase();
+const nf = n => String(Math.round(n * 10) / 10);
+const fmtSec = x => x >= 60 ? `${Math.floor(x / 60)}:${pad(x % 60)}` : `${x}s`;
+const setsTxt = x => `${x.sets || 1} × ${[x.reps ? `${x.reps} reps` : "", x.sec ? `${fmtSec(x.sec)} hold` : ""].filter(Boolean).join(" · ")}${x.weight ? ` @ ${nf(x.weight)} lb` : ""}`;
+const isUpperEx = name => db.settings.exercises.upper.some(x => exKey(x) === exKey(name));
+function rememberEx(area, name) {
+  const l = db.settings.exercises[area];
+  if (l && name && !l.some(x => exKey(x) === exKey(name))) l.push(name);
+}
+function lockCheck(e) {
+  if (db.settings.shouldersCleared || (e.area !== "upper" && !isUpperEx(e.ex))) return;
+  return `${e.area === "upper" ? "Upper-body exercises are" : `"${e.ex}" is an upper-body exercise and is`} locked until your PT clears your shoulders. You can unlock them on the Fitness tab or in Settings.`;
+}
+const F = (name, label, kind, o = {}) => ({ name, label, kind, ...o });
+const D = (label = "Date", o = {}) => F("date", label, "date", { req: 1, maxToday: 1, ...o });
+const SETS = F("sets", "Sets", "int", { req: 1, min: 1 });
+const REPS = F("reps", "Reps per set", "int", { min: 1 });
+// rows: each inner array is one row of fields. check(entry, existingOrNull) returns an error message or nothing.
+const SPEC = {
+  weights: { title: "weigh-in",
+    rows: [[D(), F("w", "Weight (lb)", "num", { req: 1, step: "0.1" })], [F("type", "When", "select", { opts: () => TYPES })],
+      [F("bf", "Body fat %", "num", { step: "0.1" }), F("muscle", "Muscle (lb)", "num", { step: "0.1" }), F("bmi", "BMI", "num", { step: "0.1" })], [F("note", "Note", "text")]],
+    check(e, old) {
+      if (e.w == null || e.w < 50 || e.w > 700) return "Enter a weight in pounds.";
+      if (db.weights.some(x => x !== old && x.date === e.date && x.type === e.type)) return `There's already a ${TYPES[e.type].toLowerCase()} reading on ${fmtD(e.date)}. Edit or delete that one instead.`;
+    } },
+  meals: { title: "meal",
+    rows: [[D("Date", { maxToday: 0 }), F("time", "Time", "time", { req: 1 })], [F("text", "What did you eat?", "textarea", { req: 1 })], [F("cheat", "This was a cheat meal", "check")]] },
+  cheats: { title: "cheat meal",
+    rows: [[D("Day", { maxToday: 0 })], [F("text", "What's the plan?", "text", { req: 1 })], [F("done", "Already had it", "check")]] },
+  fasts: { title: "fast",
+    rows: [[F("start", "Fast started", "dt", { req: 1 })], [F("end", "Fast ended (leave empty if still fasting)", "dt")]],
+    check(e, old) {
+      if (!e.start) return "Enter when the fast started.";
+      if (e.end && e.end <= e.start) return "The end time needs to be after the start time.";
+      if (!e.end && db.fasts.some(x => x !== old && !x.end)) return "You already have a fast running.";
+    } },
+  cardio: { title: "cardio session", added: "Session added",
+    rows: [[F("type", "Activity", "select", { opts: () => CARDIO_TYPES }), F("min", "Minutes", "int", { req: 1, min: 1, max: 600, ph: "30" })], [D()]],
+    check: e => { if (!(e.min >= 1)) return "Enter how many minutes."; } },
+  core: { title: "core exercise", added: "Core exercise logged",
+    rows: [[F("ex", "Exercise", "ex", { req: 1, list: "core" })], [SETS, REPS, F("sec", "Hold (sec)", "int", { min: 1, ph: "planks etc." })], [D()]],
+    check(e) {
+      if (!(e.sets >= 1)) return "Enter how many sets.";
+      if (!e.reps && !e.sec) return "Enter reps per set (or a hold time for planks and other holds).";
+      const lock = lockCheck(e); if (lock) return lock;
+      rememberEx("core", e.ex);
+    } },
+  strength: { title: "strength exercise", added: "Exercise logged",
+    rows: [[F("area", "Body area", "area")], [F("ex", "Exercise", "ex", { req: 1 })],
+      [SETS, F("reps", "Reps per set", "int", { req: 1, min: 1 }), F("weight", "Weight (lb)", "num", { step: "0.5", min: 0, ph: "bodyweight" })],
+      [F("min", "Time spent (min)", "int", { min: 1, max: 600, ph: "optional" }), D()]],
+    check(e) {
+      if (!e.area) e.area = "lower";
+      const lock = lockCheck(e); if (lock) return lock;
+      if (!(e.sets >= 1) || !(e.reps >= 1)) return "Enter sets and reps.";
+      rememberEx(e.area, e.ex);
+    } },
+  liftGoals: { title: "exercise goal", added: "Goal added",
+    rows: [[F("area", "Area", "area", { core: 1 })], [F("ex", "Exercise", "ex", { req: 1 })],
+      [SETS, REPS, F("sec", "Hold (sec, core)", "int", { min: 1 })], [F("weight", "Weight (lb, optional)", "num", { step: "0.5", min: 0 })]],
+    check(e) {
+      if (!e.area) e.area = "lower";
+      const lock = lockCheck(e); if (lock) return lock;
+      if (!(e.sets >= 1)) e.sets = 1;
+      if (e.area === "core") e.weight = null; else e.sec = null;
+      if (!e.reps && !e.sec) return e.area === "core" ? "Set a target: reps per set or a hold time." : "Set a target number of reps.";
+      rememberEx(e.area, e.ex);
+    } },
+  labs: { title: "lab result",
+    rows: [[F("name", "Test name", "text", { req: 1 })], [F("value", "Result", "text", { req: 1 }), F("unit", "Unit", "text")],
+      [D("Date drawn"), F("range", "Lab's reference range", "text")]],
+    check(e) { const t = findTest(e.name); if (t) { e.name = t.name; if (!e.unit) e.unit = t.unit; } } }
+};
+const coll = k => k === "liftGoals" ? db.settings.liftGoals : db[k];
+const setColl = (k, v) => { if (k === "liftGoals") db.settings.liftGoals = v; else db[k] = v; };
+function fieldHtml(fd, v, vals) {
+  const { name, kind } = fd, label = esc(fd.label), req = fd.req ? " required" : "";
+  const ph = fd.ph ? ` placeholder="${esc(fd.ph)}"` : "";
+  if (kind === "check") return `<label class="check"><input type="checkbox" name="${name}"${v ? " checked" : ""}>${label}</label>`;
+  if (kind === "select") {
+    const o = fd.opts(), opts = Array.isArray(o) ? o.map(x => [x, x]) : Object.entries(o);
+    if (v && !opts.some(([k]) => k === v)) opts.push([v, v]);
+    return `<label>${label}<select name="${name}">${opts.map(([k, l]) => `<option value="${esc(k)}"${k === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  }
+  if (kind === "area") {
+    const locked = !db.settings.shouldersCleared;
+    return `<label>${label}<select name="area">${(fd.core ? ["core", "lower", "upper"] : ["lower", "upper"]).map(a =>
+      `<option value="${a}"${a === v ? " selected" : ""}${a === "upper" && locked && v !== "upper" ? " disabled" : ""}>${AREAS[a]}${a === "upper" && locked ? " 🔒 (needs PT clearance)" : ""}</option>`).join("")}</select></label>`;
+  }
+  if (kind === "textarea") return `<label>${label}<textarea name="${name}" rows="2"${req}${ph}>${esc(v)}</textarea></label>`;
+  if (kind === "ex") return `<label>${label}<input name="ex" list="dl-${fd.list || vals.area || "lower"}" value="${esc(v)}" autocomplete="off" placeholder="Pick one or type your own"${req}></label>`;
+  if (kind === "dt") return `<label>${label}<input type="datetime-local" name="${name}" value="${v ? localInput(new Date(v)) : ""}"${req}></label>`;
+  const type = kind === "num" || kind === "int" ? "number" : kind;
+  const extra = (kind === "num" ? ` step="${fd.step || "any"}" inputmode="decimal"` : kind === "int" ? ` step="1" inputmode="numeric"` : "")
+    + (fd.min != null ? ` min="${fd.min}"` : "") + (fd.max != null ? ` max="${fd.max}"` : "") + (fd.maxToday ? ` max="${today()}"` : "");
+  return `<label>${label}<input type="${type}" name="${name}" value="${esc(v)}"${extra}${req}${ph}></label>`;
+}
+const specFields = (k, vals) => SPEC[k].rows.map(r => `<div class="row">${r.map(fd => fieldHtml(fd, vals[fd.name], vals)).join("")}</div>`).join("");
+function readSpec(k, f) {
+  const o = {};
+  for (const fd of SPEC[k].rows.flat()) {
+    const v = f.get(fd.name), n = num(v);
+    o[fd.name] = fd.kind === "num" ? n : fd.kind === "int" ? (n == null ? null : Math.round(n)) : fd.kind === "check" ? !!v
+      : fd.kind === "dt" ? (v ? new Date(v).toISOString() : null) : String(v ?? "").trim();
+  }
+  return o;
+}
+let editing = null; // {k, id} while the edit sheet is open
+const lastAdd = {};  // keeps date/area/sets between exercises logged in one sitting
+function addEntry(k, f) {
+  const e = readSpec(k, f), err = SPEC[k].check && SPEC[k].check(e, null);
+  if (err) { alert(err); return false; }
+  coll(k).push({ id: uid(), ...e });
+  if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
+  save(); toast(SPEC[k].added || "Saved");
+}
+function editSheet() {
+  const { k, id } = editing, item = (coll(k) || []).find(x => String(x.id) === id);
+  if (!item) { editing = null; return ""; }
+  return `<div class="grab"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3>Edit ${esc(SPEC[k].title)}</h3>
+      <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
+    <form data-form="edit" style="margin-top:14px">${specFields(k, item)}<button class="btn block">Save changes</button></form>
+    <button class="btn danger block" style="margin-top:10px" data-act="del" data-k="${k}" data-id="${esc(id)}">Delete</button>`;
+}
+const rowBtns = (k, id) => `<button class="x" data-act="edit" data-k="${k}" data-id="${esc(id)}" aria-label="Edit">✎</button><button class="x" data-act="del" data-k="${k}" data-id="${esc(id)}" aria-label="Delete">×</button>`;
+// upper-body items stay read-only until the shoulders are cleared
+const btnsFor = (k, x) => !db.settings.shouldersCleared && x.area === "upper" ? '<span class="tag">🔒</span>' : rowBtns(k, x.id);
+const moreList = (items, n, row) => !items.length ? "" : `<ul class="list">${items.slice(0, n).map(row).join("")}</ul>
+  ${items.length > n ? `<details style="margin-top:6px"><summary>Show ${items.length - n} more</summary><ul class="list">${items.slice(n).map(row).join("")}</ul></details>` : ""}`;
+const newestFirst = arr => [...arr].reverse().sort((a, b) => b.date.localeCompare(a.date));
+function renderDatalists() {
+  const s = db.settings, locked = !s.shouldersCleared;
+  $("#dl").innerHTML = Object.keys(AREAS).map(a => `<datalist id="dl-${a}">${(a === "upper" && locked ? [] : s.exercises[a]).map(x => `<option value="${esc(x)}">`).join("")}</datalist>`).join("");
+}
+
+// =====================================================================
 // Navigation
 // =====================================================================
 const ICONS = {
@@ -755,6 +923,7 @@ const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Food"], [
 let current = "home";
 try { current = localStorage.getItem(KEY + ".tab") || "home"; } catch (e) {}
 let wView = "daily";
+let fView = "cardio";
 let openLab = null;
 
 function renderTabs() {
@@ -770,6 +939,7 @@ function render() {
   if (!views[current]) current = "home";
   $("#eyebrow").textContent = greeting();
   $("#title").textContent = current === "settings" ? "Settings" : current === "home" ? "Dashboard" : TABS.find(t => t[0] === current)[1];
+  renderDatalists();
   $("#view").innerHTML = views[current]();
   renderTabs();
   if (current === "weight") drawWeightCharts();
@@ -794,7 +964,8 @@ function viewHome() {
   const thisW = weekSummary(tw, weekStart(t)), prevW = weekSummary(tw, addDays(weekStart(t), -7));
   const wd = thisW.avg != null && prevW.avg != null ? thisW.avg - prevW.avg : null;
   const active = db.fasts.find(f => !f.end);
-  const cardio = db.cardio.filter(c => c.date >= weekStart(t)).reduce((a, c) => a + c.min, 0);
+  const cardio = sumMin(db.cardio, weekStart(t)), strength = sumMin(db.strength, weekStart(t));
+  const coreWk = db.core.filter(x => x.date >= weekStart(t)), coreSets = coreWk.reduce((a, x) => a + (x.sets || 1), 0);
   const g = labGroups(), evals = Object.values(g).map(a => evalLab(a[a.length - 1]));
   const nBad = evals.filter(e => e.st === "bad").length, nWarn = evals.filter(e => e.st === "warn").length;
   return `
@@ -812,7 +983,8 @@ function viewHome() {
   <div class="actions">
     <button data-act="quick" data-go="weight" data-focus="logWeight">${ICONS.plus}Log weight</button>
     <button data-act="${active ? "endFast" : "startFast"}">${ICONS.food}${active ? "End fast" : "Start fast"}</button>
-    <button data-act="quick" data-go="fitness" data-focus="cardioForm">${ICONS.fitness}Log cardio</button>
+    <button data-act="quick" data-go="fitness" data-fv="cardio" data-focus="cardioForm">${ICONS.fitness}Log cardio</button>
+    <button data-act="quick" data-go="fitness" data-fv="strength" data-focus="strengthForm">${ICONS.plus}Log strength</button>
   </div>
   <div class="grid2">
     <button class="tile" data-tab="weight"><div class="label">This week avg</div>
@@ -825,10 +997,17 @@ function viewHome() {
       <div class="value n">${active ? fmtDur(Date.now() - new Date(active.start)) : "Eating"}</div>
       <div class="sub">${active ? `Goal ${s.fastTarget}h · started ${fmtTime(active.start)}` : "Tap to start a fast"}</div>
       ${active ? `<div class="bar"><span style="width:${Math.min(100, (Date.now() - new Date(active.start)) / (s.fastTarget * 36e5) * 100)}%"></span></div>` : ""}</button>
-    <button class="tile" data-tab="fitness"><div class="label">Cardio this week</div>
+    <button class="tile" data-tab="fitness" data-fv="cardio"><div class="label">Cardio this week</div>
       <div class="value n">${cardio}<small>/ ${s.cardioTarget}</small></div>
       <div class="sub">${cardio >= s.cardioTarget ? "Target hit 🔥" : `${s.cardioTarget - cardio} min to go`}</div>
       <div class="bar ${cardio >= s.cardioTarget ? "good" : ""}"><span style="width:${Math.min(100, cardio / s.cardioTarget * 100)}%"></span></div></button>
+    <button class="tile" data-tab="fitness" data-fv="strength"><div class="label">Strength this week</div>
+      <div class="value n">${strength}<small>/ ${s.strengthTarget}</small></div>
+      <div class="sub">${strength >= s.strengthTarget ? "Target hit 🔥" : `${s.strengthTarget - strength} min to go`}</div>
+      <div class="bar ${strength >= s.strengthTarget ? "good" : ""}"><span style="width:${Math.min(100, strength / s.strengthTarget * 100)}%"></span></div></button>
+    <button class="tile" data-tab="fitness" data-fv="core"><div class="label">Core this week</div>
+      <div class="value n">${coreSets}<small>sets</small></div>
+      <div class="sub">${coreWk.length ? `${coreWk.length} exercise${coreWk.length === 1 ? "" : "s"} logged` : "Tap to log"}</div></button>
   </div>
   <button class="tile" data-tab="labs" style="margin-bottom:14px"><div class="label">Blood work</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -922,10 +1101,10 @@ function viewWeight() {
   </div>
   <div class="card">
     <h2>All readings</h2>
-    ${all.length ? `<ul class="list">${[...all].reverse().slice(0, 40).map(w => `
+    ${all.length ? moreList([...all].reverse(), 30, w => `
       <li><div class="grow"><div><b>${fmtDay(w.date)}</b> <span class="tag ${w.type === "wake" ? "red" : ""}">${TYPES[w.type] || w.type}</span> ${w.src === "health" ? '<span class="tag">Health</span>' : ""}</div>
         <div class="faint">${[w.note ? esc(w.note) : "", w.bf != null ? r1(w.bf) + "% fat" : "", w.muscle != null ? r1(w.muscle) + " lb muscle" : "", w.lean != null ? r1(w.lean) + " lb lean" : "", w.bmi != null ? "BMI " + r1(w.bmi) : ""].filter(Boolean).join(" · ")}</div></div>
-        <span class="num">${r1(w.w)}</span><button class="x" data-act="del" data-k="weights" data-id="${w.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : `<p class="faint">No weigh-ins yet.</p>`}
+        <span class="num">${r1(w.w)}</span>${rowBtns("weights", w.id)}</li>`) : `<p class="faint">No weigh-ins yet.</p>`}
   </div>`;
 }
 function aggregate(keyFn, startFn) {
@@ -1000,21 +1179,22 @@ function viewFood() {
         </form></details></div>`;
   }
   const recentFasts = done.slice(0, 7);
+  const fastRow = f => {
+    const dur = new Date(f.end) - new Date(f.start), hit = dur >= s.fastTarget * 36e5;
+    return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
+      <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}${rowBtns("fasts", f.id)}</li>`; };
+  const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate ? 92 : 66}px;flex:none">${withDate ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}</div>${rowBtns("meals", m.id)}</li>`;
   const avgFast = recentFasts.length ? recentFasts.reduce((a, f) => a + (new Date(f.end) - new Date(f.start)), 0) / recentFasts.length : null;
   const upcoming = db.cheats.filter(c => !c.done).sort((a, b) => a.date.localeCompare(b.date));
   const pastCheats = db.cheats.filter(c => c.done).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const meals = [...db.meals].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-  const recentMeals = meals.filter(m => m.date >= addDays(t, -6));
+  const recentMeals = meals.filter(m => m.date >= addDays(t, -6)), olderMeals = meals.filter(m => m.date < addDays(t, -6));
   const byDay = {};
   recentMeals.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
   const nowT = new Date(), hm = `${pad(nowT.getHours())}:${pad(nowT.getMinutes())}`;
   return `${fastCard}
   <div class="card"><h2>Recent fasts <small>${avgFast ? "avg " + fmtDur(avgFast) : ""}</small></h2>
-    ${recentFasts.length ? `<ul class="list">${recentFasts.map(f => {
-      const dur = new Date(f.end) - new Date(f.start), hit = dur >= s.fastTarget * 36e5;
-      return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
-      <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}<button class="x" data-act="del" data-k="fasts" data-id="${f.id}" aria-label="Delete">×</button></li>`; }).join("")}</ul>`
-      : `<p class="faint">Completed fasts show up here.</p>`}
+    ${done.length ? moreList(done, 7, fastRow) : `<p class="faint">Completed fasts show up here.</p>`}
   </div>
   <div class="card"><h2>Meals</h2>
     <details ${meals.length ? "" : "open"}><summary>Log a meal</summary>
@@ -1024,87 +1204,115 @@ function viewFood() {
         <label class="check"><input type="checkbox" name="cheat">This was a cheat meal</label>
         <button class="btn block" style="margin-top:10px">Save meal</button>
       </form></details>
-    ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => `<p class="faint" style="margin:16px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${fmtDay(d)}</p><ul class="list">${ms.map(m =>
-      `<li><span class="faint" style="width:66px;flex:none">${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}</div><button class="x" data-act="del" data-k="meals" data-id="${m.id}" aria-label="Delete">×</button></li>`).join("")}</ul>`).join("")
+    ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => `<p class="faint" style="margin:16px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${fmtDay(d)}</p><ul class="list">${ms.map(m => mealRow(m)).join("")}</ul>`).join("")
       : `<p class="faint">No meals logged in the last 7 days.</p>`}
+    ${olderMeals.length ? `<details style="margin-top:12px"><summary>Earlier meals (${olderMeals.length})</summary><ul class="list">${olderMeals.map(m => mealRow(m, true)).join("")}</ul></details>` : ""}
   </div>
   <div class="card"><h2>Cheat meal planner</h2>
     <p class="faint" style="margin-top:0">Plan them ahead so they're a choice, not a slip.</p>
     ${upcoming.length ? `<ul class="list">${upcoming.map(c => `<li><div class="grow"><div><b>${fmtDay(c.date)}</b> ${c.date < t ? '<span class="tag red">overdue</span>' : ""}</div><div class="muted">${esc(c.text)}</div></div>
-      <button class="btn secondary small" data-act="cheatDone" data-id="${c.id}">Had it</button><button class="x" data-act="del" data-k="cheats" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : `<p class="faint">No cheat meals planned.</p>`}
+      <button class="btn secondary small" data-act="cheatDone" data-id="${c.id}">Had it</button>${rowBtns("cheats", c.id)}</li>`).join("")}</ul>` : `<p class="faint">No cheat meals planned.</p>`}
     <details style="margin-top:12px"><summary>Plan a cheat meal</summary>
       <form data-form="cheat">
         <label>Day<input type="date" name="date" value="${addDays(t, (6 - parseD(t).getDay() + 7) % 7 || 7)}" required></label>
         <label>What's the plan?<input type="text" name="text" placeholder="e.g. Pizza night with family" required></label>
         <button class="btn block">Add to plan</button>
       </form></details>
-    ${pastCheats.length ? `<p class="faint" style="margin:16px 0 2px;font-weight:700">Recently enjoyed</p><ul class="list">${pastCheats.map(c => `<li><div class="grow">${fmtD(c.date)} · ${esc(c.text)}</div><button class="x" data-act="del" data-k="cheats" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+    ${pastCheats.length ? `<p class="faint" style="margin:16px 0 2px;font-weight:700">Recently enjoyed</p><ul class="list">${pastCheats.map(c => `<li><div class="grow">${fmtD(c.date)} · ${esc(c.text)}</div>${rowBtns("cheats", c.id)}</li>`).join("")}</ul>` : ""}
   </div>`;
 }
 
 // =====================================================================
 // Fitness tab
 // =====================================================================
+const sumMin = (arr, from, to = "9999-12-31") => arr.filter(c => c.date >= from && c.date <= to).reduce((a, c) => a + (c.min || 0), 0);
+function weekBars(arr, target) {
+  const ws = weekStart(today()), weeks = [];
+  for (let i = 7; i >= 0; i--) { const start = addDays(ws, -7 * i); weeks.push({ start, m: sumMin(arr, start, addDays(start, 6)) }); }
+  const maxM = Math.max(target * 1.2, ...weeks.map(w => w.m));
+  return `<div class="weeks"><div class="target-line" style="bottom:${target / maxM * 100}%"></div>
+      ${weeks.map(w => `<div class="wk ${w.m >= target ? "hit" : ""}" style="height:${w.m / maxM * 100}%" title="${w.m} min"></div>`).join("")}</div>
+    <div class="weeks-labels">${weeks.map(w => `<span>${w.m}<br>${fmtD(w.start)}</span>`).join("")}</div>`;
+}
+function weekHero(title, mins, target, form, list) {
+  return `<div class="card hero"><h2>${title} <small>Mon–Sun</small></h2>
+    <div class="big">${mins}<small> / ${target} min</small></div>
+    <div class="faint" style="margin-bottom:12px">${mins >= target ? "Weekly target hit 🔥" : `${target - mins} min to go`}</div>
+    <div class="bar ${mins >= target ? "good" : ""}"><span style="width:${Math.min(100, mins / target * 100)}%"></span></div>
+    ${form}${list}</div>`;
+}
+function goalProgress(g) {
+  const same = (g.area === "core" ? db.core : db.strength).filter(e => exKey(e.ex) === exKey(g.ex));
+  const meets = e => (e.sets || 1) >= (g.sets || 1) && (!g.reps || (e.reps || 0) >= g.reps) && (!g.sec || (e.sec || 0) >= g.sec) && (!g.weight || (e.weight || 0) >= g.weight);
+  const hit = same.filter(meets).sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  const max = xs => Math.max(0, ...xs);
+  let best, target, txt;
+  if (g.weight) { best = max(same.filter(e => (e.reps || 0) >= (g.reps || 0)).map(e => e.weight || 0)); target = g.weight; txt = best ? `Best: ${nf(best)} lb for ${g.reps}+ reps` : "No sets at that rep count yet"; }
+  else if (g.sec) { best = max(same.map(e => e.sec || 0)); target = g.sec; txt = best ? `Best hold: ${fmtSec(best)}` : "Not logged yet"; }
+  else { best = max(same.map(e => e.reps || 0)); target = g.reps; txt = best ? `Best set: ${best} reps` : "Not logged yet"; }
+  return { hit, txt, pct: hit ? 100 : Math.min(99, best / target * 100) };
+}
+function goalList(goals) {
+  return goals.map(g => { const p = goalProgress(g);
+    return `<div class="milestone"><div><b>${esc(g.ex)}</b> ${g.area === "upper" ? '<span class="tag red">Upper</span>' : ""}<div class="muted" style="font-size:15px">${setsTxt(g)}</div>
+        <div class="faint">${p.hit ? `Reached ${fmtD(p.hit.date)} 🎉` : p.txt}</div></div>
+      <div style="display:flex;align-items:center;gap:2px">${p.hit ? '<span class="tag good">✓ Done</span>' : `<span class="n" style="font-size:22px;font-weight:700">${Math.round(p.pct)}%</span>`}${btnsFor("liftGoals", g)}</div>
+      <div class="bar ${p.hit ? "good" : ""}"><span style="width:${p.pct}%"></span></div></div>`; }).join("");
+}
+const exRow = k => x => `<li><div class="grow"><div><b>${esc(x.ex)}</b> ${x.area === "upper" ? '<span class="tag red">Upper</span>' : ""}</div>
+  <div class="faint">${fmtDay(x.date)} · ${setsTxt(x)}</div></div>${x.min ? `<span class="num">${x.min} min</span>` : ""}${btnsFor(k, x)}</li>`;
+const goalsLink = `<small><a href="#" data-tab="settings">Edit in Settings</a></small>`;
 function viewFitness() {
+  const seg = `<div class="seg">${[["cardio", "Cardio"], ["strength", "Strength"], ["core", "Core"]].map(([k, l]) => `<button class="${fView === k ? "on" : ""}" data-act="fview" data-v="${k}">${l}</button>`).join("")}</div>`;
+  return seg + (fView === "strength" ? fitStrength() : fView === "core" ? fitCore() : fitCardio());
+}
+function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
-  const thisWeek = db.cardio.filter(c => c.date >= ws).sort((a, b) => b.date.localeCompare(a.date));
-  const mins = thisWeek.reduce((a, c) => a + c.min, 0);
-  const pct = Math.min(100, mins / s.cardioTarget * 100);
-  const weeks = [];
-  for (let i = 7; i >= 0; i--) {
-    const start = addDays(ws, -7 * i), end = addDays(start, 6);
-    weeks.push({ start, m: db.cardio.filter(c => c.date >= start && c.date <= end).reduce((a, c) => a + c.min, 0) });
-  }
-  const maxM = Math.max(s.cardioTarget * 1.2, ...weeks.map(w => w.m));
-  const planks = [...db.planks].sort((a, b) => b.date.localeCompare(a.date));
-  const bestPlank = planks.reduce((a, p) => Math.max(a, p.sec), 0);
-  const pushups = [...db.pushups].sort((a, b) => b.date.localeCompare(a.date));
-  const bestPush = pushups.reduce((a, p) => Math.max(a, p.reps), 0);
-  const fmtSec = x => x >= 60 ? `${Math.floor(x / 60)}:${pad(x % 60)}` : `${x}s`;
+  const thisWeek = newestFirst(db.cardio.filter(c => c.date >= ws)), older = newestFirst(db.cardio.filter(c => c.date < ws));
+  const row = c => `<li><div class="grow">${esc(c.type)}<div class="faint">${fmtDay(c.date)}</div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`;
   return `
-  <div class="card hero"><h2>Cardio this week <small>Mon–Sun</small></h2>
-    <div class="big">${mins}<small> / ${s.cardioTarget} min</small></div>
-    <div class="faint" style="margin-bottom:12px">${mins >= s.cardioTarget ? "Weekly target hit 🔥" : `${s.cardioTarget - mins} min to go`}</div>
-    <div class="bar ${mins >= s.cardioTarget ? "good" : ""}"><span style="width:${pct}%"></span></div>
-    <form data-form="cardio" id="cardioForm" style="margin-top:18px">
-      <div class="row">
-        <label>Activity<select name="type"><option>Incline walk</option><option>Peloton ride</option><option>Other cardio</option></select></label>
-        <label>Minutes<input type="number" name="min" min="1" max="600" inputmode="numeric" placeholder="30" required></label>
-      </div>
-      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label>
-      <button class="btn block">Add session</button>
-    </form>
-    ${thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(c => `<li><div class="grow">${esc(c.type)}<div class="faint">${fmtDay(c.date)}</div></div><span class="num">${c.min} min</span><button class="x" data-act="del" data-k="cardio" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+  ${weekHero("Cardio this week", sumMin(db.cardio, ws), s.cardioTarget,
+    `<form data-form="add" data-k="cardio" id="cardioForm" style="margin-top:18px">${specFields("cardio", { date: t })}<button class="btn block">Add session</button></form>`,
+    thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(row).join("")}</ul>` : "")}
+  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>${weekBars(db.cardio, s.cardioTarget)}</div>
+  ${older.length ? `<div class="card"><h2>Earlier sessions</h2>${moreList(older, 10, row)}</div>` : ""}`;
+}
+function fitStrength() {
+  const s = db.settings, t = today(), ws = weekStart(t), cleared = s.shouldersCleared;
+  const thisWeek = newestFirst(db.strength.filter(x => x.date >= ws)), older = newestFirst(db.strength.filter(x => x.date < ws));
+  const goals = s.liftGoals.filter(g => g.area === "lower" || (g.area === "upper" && cleared));
+  const nLocked = s.liftGoals.filter(g => g.area === "upper").length;
+  return `
+  ${weekHero("Strength this week", sumMin(db.strength, ws), s.strengthTarget,
+    `<form data-form="add" data-k="strength" id="strengthForm" style="margin-top:18px">${specFields("strength", { date: t, area: "lower", sets: 3, ...lastAdd.strength })}
+      <button class="btn block">Log exercise</button>
+      <p class="faint">Logging a whole workout? Add each exercise, and put the time on one of them (or split it) — it all counts toward your weekly minutes.</p></form>`,
+    thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(exRow("strength")).join("")}</ul>` : "")}
+  ${cleared ? "" : `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">Upper-body exercises locked</h2>
+    <p class="muted">Push-ups, presses, rows and other upper-body work unlock once your physical therapist clears your shoulders${nLocked ? ` — your ${nLocked} upper-body goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}. Lower-body work is open now.</p>
+    <button class="btn secondary" data-act="clearShoulders">My PT cleared me</button></div>`}
+  <div class="card"><h2>Strength goals ${goalsLink}</h2>
+    ${goals.length ? goalList(goals) : `<p class="faint">No strength goals yet — add them in Settings.</p>`}
+    ${cleared && s.clearedDate ? `<p class="faint">Shoulders cleared by PT on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
+  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.strengthTarget} min</small></h2>${weekBars(db.strength, s.strengthTarget)}</div>
+  ${older.length ? `<div class="card"><h2>Earlier workouts</h2>${moreList(older, 10, exRow("strength"))}</div>` : ""}`;
+}
+function fitCore() {
+  const s = db.settings, t = today(), ws = weekStart(t);
+  const wk = db.core.filter(x => x.date >= ws), sets = wk.reduce((a, x) => a + (x.sets || 1), 0);
+  const nEx = new Set(wk.map(x => exKey(x.ex))).size;
+  const goals = s.liftGoals.filter(g => g.area === "core");
+  return `
+  <div class="card hero"><h2>Core this week <small>Mon–Sun</small></h2>
+    <div class="big">${sets}<small> sets</small></div>
+    <div class="faint">${nEx ? `${nEx} different exercise${nEx === 1 ? "" : "s"}` : "Nothing logged yet this week"}</div>
+    <form data-form="add" data-k="core" id="coreForm" style="margin-top:18px">${specFields("core", { date: t, sets: 3, ...lastAdd.core })}
+      <button class="btn block">Log exercise</button>
+      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${s.shouldersCleared ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT before doing those."}</p></form>
   </div>
-  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>
-    <div class="weeks"><div class="target-line" style="bottom:${s.cardioTarget / maxM * 100}%"></div>
-      ${weeks.map(w => `<div class="wk ${w.m >= s.cardioTarget ? "hit" : ""}" style="height:${w.m / maxM * 100}%" title="${w.m} min"></div>`).join("")}</div>
-    <div class="weeks-labels">${weeks.map(w => `<span>${w.m}<br>${fmtD(w.start)}</span>`).join("")}</div>
-  </div>
-  <div class="card"><h2>Plank holds <small>goal ${fmtSec(s.plankGoal)}</small></h2>
-    <div class="banner warn" style="margin-bottom:12px">Planks put weight through your shoulders — confirm with your PT before starting these.</div>
-    <div class="muted">Best hold: <b class="n" style="font-size:22px">${bestPlank ? fmtSec(bestPlank) : "—"}</b></div>
-    <div class="bar ${bestPlank >= s.plankGoal ? "good" : ""}" style="margin:8px 0 16px"><span style="width:${Math.min(100, bestPlank / s.plankGoal * 100)}%"></span></div>
-    <form data-form="plank"><div class="row">
-      <label>Seconds held<input type="number" name="sec" min="1" max="3600" inputmode="numeric" placeholder="45" required></label>
-      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label></div>
-      <button class="btn block">Log plank</button></form>
-    ${planks.length ? `<ul class="list" style="margin-top:10px">${planks.slice(0, 5).map(p => `<li><div class="grow">${fmtDay(p.date)}</div><span class="num">${fmtSec(p.sec)}</span><button class="x" data-act="del" data-k="planks" data-id="${p.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
-  </div>
-  ${s.shouldersCleared ? `
-  <div class="card"><h2>Push-ups <small>goal ${s.pushupGoal} in a set</small></h2>
-    <p class="faint" style="margin-top:0">Cleared by PT${s.clearedDate ? " on " + fmtD(s.clearedDate) : ""}. Ease in and stop if anything pinches.</p>
-    <div class="muted">Best set: <b class="n" style="font-size:22px">${bestPush || "—"}</b></div>
-    <div class="bar ${bestPush >= s.pushupGoal ? "good" : ""}" style="margin:8px 0 16px"><span style="width:${Math.min(100, bestPush / s.pushupGoal * 100)}%"></span></div>
-    <form data-form="pushup"><div class="row">
-      <label>Reps in one set<input type="number" name="reps" min="1" max="500" inputmode="numeric" placeholder="10" required></label>
-      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label></div>
-      <button class="btn block">Log push-ups</button></form>
-    ${pushups.length ? `<ul class="list" style="margin-top:10px">${pushups.slice(0, 5).map(p => `<li><div class="grow">${fmtDay(p.date)}</div><span class="num">${p.reps} reps</span><button class="x" data-act="del" data-k="pushups" data-id="${p.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
-  </div>` : `
-  <div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">Upper-body goals locked</h2>
-    <p class="muted">Push-ups unlock once your physical therapist clears your shoulders. Until then, cardio is the focus.</p>
-    <button class="btn secondary" data-act="clearShoulders">My PT cleared me</button></div>`}`;
+  <div class="card"><h2>Core goals ${goalsLink}</h2>
+    ${goals.length ? goalList(goals) : `<p class="faint">No core goals yet — add them in Settings.</p>`}</div>
+  <div class="card"><h2>Recent core work</h2>${moreList(newestFirst(db.core), 10, exRow("core")) || `<p class="faint">Nothing logged yet.</p>`}</div>`;
 }
 
 // =====================================================================
@@ -1151,7 +1359,7 @@ function viewLabs() {
   ${dates.length ? `<div class="card"><details><summary>All results by date</summary>
     ${[...dates].reverse().map(d => `<p class="faint" style="margin:14px 0 4px;font-weight:700">${fmtDY(d)}${d === dates[0] ? ' <span class="tag">Baseline</span>' : ""}</p>
       <table><tbody>${db.labs.filter(l => l.date === d).sort((a, b) => a.name.localeCompare(b.name)).map(l => { const e = evalLab(l);
-        return `<tr><td>${esc(l.name)}<div style="margin-top:3px">${stChip(e)}</div></td><td class="v">${esc(l.value)} <span class="faint" style="font-family:Barlow;font-size:12px">${esc(l.unit)}</span></td><td style="text-align:right"><button class="x" data-act="del" data-k="labs" data-id="${l.id}" aria-label="Delete">×</button></td></tr>`; }).join("")}</tbody></table>`).join("")}
+        return `<tr><td>${esc(l.name)}<div style="margin-top:3px">${stChip(e)}</div></td><td class="v">${esc(l.value)} <span class="faint" style="font-family:Barlow;font-size:12px">${esc(l.unit)}</span></td><td style="text-align:right;white-space:nowrap">${rowBtns("labs", l.id)}</td></tr>`; }).join("")}</tbody></table>`).join("")}
   </details></div>` : ""}
   <div class="card"><details><summary>How results are rated</summary>
     <p class="muted" style="margin-top:0">1. <b>Your lab's range wins.</b> If you enter it, results inside it are <span style="color:var(--good)">green</span>; up to 10% past the edge is <span style="color:var(--warn)">yellow</span>; further out is <span style="color:var(--bad)">red</span>.</p>
@@ -1187,7 +1395,7 @@ function labSheet(k) {
     ${bands}
     ${arr.length >= 2 ? `<h4>Your results over time</h4><div class="chart" id="labChart"></div>` : ""}
     <table style="margin-top:6px"><tbody>${[...arr].reverse().map(l => { const le = evalLab(l);
-      return `<tr><td>${fmtDY(l.date)}${l === arr[0] && arr.length > 1 ? ' <span class="tag">Baseline</span>' : ""}</td><td class="v">${esc(l.value)}</td><td>${stChip(le)}</td><td class="faint">${l.range ? "lab: " + esc(l.range) : ""}</td></tr>`; }).join("")}</tbody></table>
+      return `<tr><td>${fmtDY(l.date)}${l === arr[0] && arr.length > 1 ? ' <span class="tag">Baseline</span>' : ""}</td><td class="v">${esc(l.value)}</td><td>${stChip(le)}</td><td class="faint">${l.range ? "lab: " + esc(l.range) : ""}</td><td><button class="x" data-act="edit" data-k="labs" data-id="${esc(l.id)}" aria-label="Edit">✎</button></td></tr>`; }).join("")}</tbody></table>
     ${t ? `<h4>What it measures</h4><p>${esc(t.what)}</p>
       <h4>If it's high</h4><p>${esc(t.high)}</p>
       <h4>If it's low</h4><p>${esc(t.low)}</p>
@@ -1198,10 +1406,11 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
+  if (editing) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -1220,6 +1429,7 @@ function viewSettings() {
   const s = db.settings;
   const appUrl = location.origin + location.pathname;
   const ft = s.heightIn ? Math.floor(s.heightIn / 12) : "", inch = s.heightIn ? Math.round(s.heightIn % 12) : "";
+  const nUpper = s.liftGoals.filter(g => g.area === "upper").length;
   const backupAge = s.lastBackup ? Math.floor((Date.now() - new Date(s.lastBackup)) / 864e5) : null;
   return `
   ${navigator.standalone ? `<div class="banner warn"><b>Heads up:</b> you opened the home-screen web-app version. iPhone keeps its data separate from Safari's, and the Apple Health Shortcut opens Safari. Use the Shortcut as your home-screen icon instead (see the setup guide).</div>` : ""}
@@ -1240,18 +1450,30 @@ function viewSettings() {
         <label>Height (ft)<input type="number" name="ft" min="3" max="8" value="${ft}" inputmode="numeric" placeholder="5"></label>
         <label>Height (in)<input type="number" name="in" min="0" max="11" value="${inch}" inputmode="numeric" placeholder="10"></label>
       </div>
-      <label>Weight goals (lb, comma separated — the lowest is maintenance)<input name="goals" value="${s.goals.join(", ")}"></label>
+      <label>Goal weights (lb, comma separated — the lowest is maintenance)<input name="goals" value="${s.goals.join(", ")}"></label>
       <div class="row">
         <label>Cardio min / week<input type="number" name="cardioTarget" min="10" value="${s.cardioTarget}" inputmode="numeric"></label>
-        <label>Fast goal (hours)<input type="number" name="fastTarget" min="8" max="72" value="${s.fastTarget}" inputmode="numeric"></label>
+        <label>Strength min / week<input type="number" name="strengthTarget" min="10" value="${s.strengthTarget}" inputmode="numeric"></label>
       </div>
       <div class="row">
-        <label>Plank goal (sec)<input type="number" name="plankGoal" min="10" value="${s.plankGoal}" inputmode="numeric"></label>
-        <label>Push-up goal (reps)<input type="number" name="pushupGoal" min="1" value="${s.pushupGoal}" inputmode="numeric"></label>
+        <label>Fast goal (hours)<input type="number" name="fastTarget" min="8" max="72" value="${s.fastTarget}" inputmode="numeric"></label>
       </div>
       <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>PT has cleared my shoulders for upper-body work</label>
       <button class="btn block" style="margin-top:12px">Save settings</button>
     </form>
+  </div>
+  <div class="card"><h2>Exercise goals <small>core &amp; strength</small></h2>
+    ${goalList(s.liftGoals.filter(g => g.area !== "upper" || s.shouldersCleared)) || `<p class="faint">No exercise goals yet.</p>`}
+    ${!s.shouldersCleared && nUpper ? `<p class="faint">🔒 ${nUpper} upper-body goal${nUpper === 1 ? "" : "s"} can be edited once your PT clears your shoulders.</p>` : ""}
+    <details style="margin-top:12px"><summary>Add a goal</summary>
+      <form data-form="add" data-k="liftGoals">${specFields("liftGoals", { area: "lower", sets: 3 })}
+        <p class="faint" style="margin-top:-4px">A goal is met by one logged entry with at least these sets and reps (and weight or hold time, if set).</p>
+        <button class="btn block">Add goal</button></form></details>
+  </div>
+  <div class="card"><h2>My exercises</h2>
+    <p class="faint" style="margin-top:0">Suggestions when you log, one per line. Anything new you type while logging is added here automatically.</p>
+    <form data-form="exlists">${Object.keys(AREAS).map(a => `<label>${AREAS[a]}${a === "upper" && !s.shouldersCleared ? " 🔒" : ""}<textarea name="${a}" rows="5">${esc(s.exercises[a].join("\n"))}</textarea></label>`).join("")}
+      <button class="btn secondary block">Save exercise lists</button></form>
   </div>
   <div class="card"><h2>Backup</h2>
     <p class="muted" style="margin-top:0">Your data lives only on this phone, in Safari. Save a backup file now and then (to Files or iCloud Drive) so you never lose it.</p>
@@ -1288,9 +1510,20 @@ const forms = {
     if (!a) return; if (end <= new Date(a.start)) return alert("The end time needs to be after the start time.");
     a.end = end.toISOString(); save(); toast("Fast ended: " + fmtDur(end - new Date(a.start)));
   },
-  cardio(f) { db.cardio.push({ id: uid(), date: f.get("date"), type: f.get("type"), min: Math.round(num(f.get("min"))) }); save(); toast("Session added"); },
-  plank(f) { db.planks.push({ id: uid(), date: f.get("date"), sec: Math.round(num(f.get("sec"))) }); save(); toast("Plank logged"); },
-  pushup(f) { db.pushups.push({ id: uid(), date: f.get("date"), reps: Math.round(num(f.get("reps"))) }); save(); toast("Push-ups logged"); },
+  edit(f) {
+    const { k, id } = editing || {}, item = k && coll(k).find(x => String(x.id) === id);
+    if (!item) { editing = null; return; }
+    const e = readSpec(k, f), err = SPEC[k].check && SPEC[k].check(e, item);
+    if (err) { alert(err); return false; }
+    Object.assign(item, e); editing = null; save(); toast("Changes saved");
+  },
+  exlists(f) {
+    for (const a of Object.keys(AREAS)) {
+      const seen = new Set();
+      db.settings.exercises[a] = String(f.get(a) || "").split("\n").map(x => x.trim()).filter(x => x && !seen.has(exKey(x)) && seen.add(exKey(x)));
+    }
+    save(); toast("Exercise lists saved");
+  },
   lab(f) {
     const name = f.get("name").trim(), t = findTest(name);
     const l = { id: uid(), date: f.get("date"), name: t ? t.name : name, value: f.get("value").trim(), unit: f.get("unit").trim() || (t ? t.unit : ""), range: f.get("range").trim() };
@@ -1304,7 +1537,7 @@ const forms = {
     s.startDate = f.get("startDate") || s.startDate;
     const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50);
     if (goals.length) s.goals = [...new Set(goals)].sort((a, b) => b - a);
-    for (const k of ["cardioTarget", "fastTarget", "plankGoal", "pushupGoal"]) { const v = num(f.get(k)); if (v) s[k] = v; }
+    for (const k of ["cardioTarget", "strengthTarget", "fastTarget"]) { const v = num(f.get(k)); if (v) s[k] = v; }
     const cleared = !!f.get("shouldersCleared");
     if (cleared && !s.shouldersCleared) s.clearedDate = today();
     s.shouldersCleared = cleared;
@@ -1314,16 +1547,20 @@ const forms = {
 document.addEventListener("submit", e => {
   const form = e.target.closest("form[data-form]"); if (!form) return;
   e.preventDefault();
-  forms[form.dataset.form](new FormData(form));
-  render();
+  const fd = new FormData(form);
+  const ok = form.dataset.form === "add" ? addEntry(form.dataset.k, fd) : forms[form.dataset.form](fd);
+  if (ok !== false) render();
 });
+const syncExList = el => { const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
+  syncExList(e.target);
   if (e.target.name === "name" && e.target.closest("form[data-form=lab]")) {
     const t = findTest(e.target.value), u = e.target.form.elements.unit;
     if (t && !u.value) u.value = t.unit;
   }
 });
 document.addEventListener("change", e => {
+  syncExList(e.target);
   if (e.target.dataset.act !== "import") return;
   const file = e.target.files[0]; if (!file) return;
   file.text().then(txt => {
@@ -1333,20 +1570,24 @@ document.addEventListener("change", e => {
     localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); render(); toast("Backup restored");
   }).catch(err => alert("Couldn't read that file: " + err.message));
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && openLab) { openLab = null; renderSheet(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); openLab = null; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); openLab = null; editing = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
-  if (act === "settings") { e.preventDefault(); openLab = null; go(current === "settings" ? "home" : "settings"); return; }
-  if (act === "quick") { go(el.dataset.go, el.dataset.focus); return; }
+  if (act === "settings") { e.preventDefault(); openLab = null; editing = null; go(current === "settings" ? "home" : "settings"); return; }
+  if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; go(el.dataset.go, el.dataset.focus); return; }
   if (act === "wview") { wView = el.dataset.v; render(); return; }
+  if (act === "fview") { fView = el.dataset.v; render(); return; }
+  if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else openLab = null; renderSheet(); return; }
   if (act === "del") {
     if (!confirm("Delete this entry?")) return;
-    db[el.dataset.k] = db[el.dataset.k].filter(x => String(x.id) !== el.dataset.id); save(); render(); return;
+    setColl(el.dataset.k, coll(el.dataset.k).filter(x => String(x.id) !== el.dataset.id));
+    if (editing && editing.id === el.dataset.id) editing = null;
+    save(); render(); return;
   }
   if (act === "startFast") { db.fasts.push({ id: uid(), start: new Date().toISOString(), end: null }); save(); toast("Fast started — you've got this"); render(); return; }
   if (act === "endFast") { const a = db.fasts.find(x => !x.end); if (a) { a.end = new Date().toISOString(); save(); toast("Fast ended: " + fmtDur(new Date(a.end) - new Date(a.start))); } render(); return; }
@@ -1357,7 +1598,7 @@ document.addEventListener("click", e => {
     render(); return;
   }
   if (act === "clearShoulders") {
-    if (confirm("Has your physical therapist cleared you for push-ups and upper-body work?")) { db.settings.shouldersCleared = true; db.settings.clearedDate = today(); save(); toast("Upper-body goals unlocked 💪"); render(); }
+    if (confirm("Has your physical therapist cleared you for push-ups and upper-body work?")) { db.settings.shouldersCleared = true; db.settings.clearedDate = today(); save(); toast("Upper-body exercises unlocked 💪"); render(); }
     return;
   }
   if (act === "copyUrl") {
@@ -1382,9 +1623,9 @@ document.addEventListener("click", e => {
 
 // keep timers fresh; redraw charts on rotation
 const busy = () => document.activeElement && document.activeElement.closest("form");
-setInterval(() => { if ((current === "food" || current === "home") && db.fasts.some(f => !f.end) && !busy() && !openLab) render(); }, 30000);
-let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (current === "weight") drawWeightCharts(); if (openLab) renderSheet(); }, 150); });
-document.addEventListener("visibilitychange", () => { if (!document.hidden && !busy()) render(); });
+setInterval(() => { if ((current === "food" || current === "home") && db.fasts.some(f => !f.end) && !busy() && !openLab && !editing) render(); }, 30000);
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (current === "weight") drawWeightCharts(); if (openLab && !editing) renderSheet(); }, 150); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !busy() && !editing) render(); });
 
 handleSyncLink();
 render();
