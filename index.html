@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Health Tracker</title>
+<meta name="description" content="Personal weight, fasting, fitness and blood-work tracker.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Health">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --card: #151515;
+  --card-2: #1f1f1f;
+  --line: #2b2b2b;
+  --ink: #ffffff;
+  --ink-2: #b8b8b8;
+  --ink-3: #7c7c7c;
+  --accent: #e8202f;
+  --accent-press: #c41624;
+  --accent-soft: rgba(232, 32, 47, .16);
+  --good: #33d17a;
+  --warn: #ffc533;
+  --bad: #ff5a4a;
+  --none: #8a8a8a;
+  --radius: 16px;
+  --num: "Barlow Condensed", "SF Pro Display", system-ui, sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.45 "Barlow", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+a { color: var(--ink); }
+header.top {
+  position: sticky; top: 0; z-index: 5; background: rgba(0,0,0,.88);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+header.top .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+header.top h1 { font-family: var(--num); font-size: 32px; font-weight: 800; margin: 0; line-height: 1.05; letter-spacing: .01em; text-transform: uppercase; }
+.icon-btn {
+  border: 0; background: var(--card-2); color: var(--ink); width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; flex: none;
+}
+main { max-width: 640px; margin: 0 auto; padding: 6px 16px 24px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 18px 16px; margin: 0 0 14px; }
+.card h2 {
+  font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2);
+  margin: 0 0 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.card h2 small { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-3); font-size: 13px; }
+.muted { color: var(--ink-2); }
+.faint { color: var(--ink-3); font-size: 14px; }
+.n { font-family: var(--num); font-variant-numeric: tabular-nums; }
+.hero { background: linear-gradient(160deg, #2a0a0e 0%, #151515 55%); border: 1px solid #3a1418; }
+.hero .label { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.hero .big { font-family: var(--num); font-size: 64px; font-weight: 800; line-height: 1; margin: 6px 0 4px; }
+.hero .big small { font-size: 24px; font-weight: 600; color: var(--ink-2); margin-left: 4px; }
+.hero-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.lost { text-align: right; }
+.lost .v { font-family: var(--num); font-size: 36px; font-weight: 800; color: var(--good); line-height: 1; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.tile {
+  background: var(--card); border-radius: var(--radius); padding: 14px; min-width: 0; text-align: left;
+  border: 0; color: var(--ink); font: inherit; display: block; width: 100%; cursor: pointer;
+}
+.tile .label { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.tile .value { font-family: var(--num); font-size: 36px; font-weight: 800; line-height: 1.05; margin-top: 6px; white-space: nowrap; }
+.tile .value small { font-size: 16px; font-weight: 600; color: var(--ink-2); margin-left: 2px; }
+.tile .sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .bar { margin-top: 10px; }
+.down { color: var(--good) !important; } .up { color: var(--warn) !important; }
+.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.actions button {
+  font: inherit; font-weight: 700; font-size: 14px; border: 0; border-radius: 14px; min-height: 64px; padding: 8px;
+  background: var(--card-2); color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.actions button svg { width: 22px; height: 22px; color: var(--accent); }
+form .row { display: flex; gap: 10px; flex-wrap: wrap; }
+form .row > label { flex: 1 1 130px; }
+label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
+input, select, textarea {
+  display: block; width: 100%; margin-top: 6px; font: inherit; font-size: 17px; color: var(--ink);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; min-height: 48px;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+input[type="checkbox"] { width: 24px; height: 24px; min-height: 0; display: inline-block; margin: 0 10px 0 0; accent-color: var(--accent); flex: none; }
+label.check { display: flex; align-items: center; color: var(--ink); font-size: 16px; font-weight: 500; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--card-2); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; }
+.seg button { font: inherit; font-weight: 700; font-size: 14px; border: 0; border-radius: 9px; min-height: 40px; background: none; color: var(--ink-2); cursor: pointer; letter-spacing: .04em; text-transform: uppercase; }
+.seg button.on { background: var(--accent); color: #fff; }
+button.btn {
+  font: inherit; font-weight: 700; font-size: 16px; letter-spacing: .04em; text-transform: uppercase;
+  border: 0; border-radius: 999px; padding: 12px 20px; min-height: 52px;
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+button.btn:active { background: var(--accent-press); }
+button.btn.secondary { background: var(--card-2); color: var(--ink); }
+button.btn.ghost { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1.5px var(--line); }
+button.btn.danger { background: transparent; color: var(--bad); box-shadow: inset 0 0 0 1.5px var(--line); }
+button.btn.small { min-height: 40px; padding: 8px 14px; font-size: 13px; }
+button.btn.block { width: 100%; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+details summary { cursor: pointer; font-weight: 700; color: var(--ink); list-style: none; min-height: 32px; display: flex; align-items: center; gap: 8px; }
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: "+"; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; flex: none; }
+details[open] summary::before { content: "−"; }
+details[open] summary { margin-bottom: 14px; }
+ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list li { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+ul.list li:first-child { border-top: 0; }
+ul.list .grow { flex: 1; min-width: 0; }
+ul.list .num { font-family: var(--num); font-size: 22px; font-weight: 700; white-space: nowrap; }
+.x { border: 0; background: none; color: var(--ink-3); font-size: 22px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; flex: none; }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--card-2); color: var(--ink-2); vertical-align: 1px; }
+.tag.red { background: var(--accent-soft); color: #ff6b76; }
+.tag.good { background: rgba(51,209,122,.15); color: var(--good); }
+.bar { height: 8px; background: var(--card-2); border-radius: 999px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.bar.good > span { background: var(--good); }
+.big { font-family: var(--num); font-size: 48px; font-weight: 800; line-height: 1.05; }
+.big small { font-size: 20px; font-weight: 600; color: var(--ink-2); }
+.chart { position: relative; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .tip { position: absolute; top: 0; pointer-events: none; background: #fff; color: #000; font-size: 13px; padding: 7px 9px; border-radius: 9px; white-space: nowrap; transform: translateX(-50%); display: none; z-index: 2; }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); margin-top: 10px; flex-wrap: wrap; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.lg-line { width: 16px; height: 3px; border-radius: 2px; background: var(--accent); }
+.lg-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; }
+.lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink-3); }
+.lg-goal { width: 16px; border-top: 2px dotted var(--ink-2); }
+.stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.stats3 .tile .value { font-size: 30px; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 10px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--ink-3); font-weight: 600; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; border-top: 0; }
+td.v { font-family: var(--num); font-size: 19px; font-weight: 700; white-space: nowrap; }
+.milestone { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.milestone:first-of-type { border-top: 0; }
+.milestone .bar { grid-column: 1 / -1; }
+.weeks { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; align-items: end; height: 90px; margin-top: 10px; position: relative; }
+.weeks .wk { background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+.weeks .wk.hit { background: var(--good); }
+.weeks-labels { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; font-size: 11px; color: var(--ink-3); text-align: center; margin-top: 4px; }
+.target-line { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--ink-3); }
+.banner { background: var(--card-2); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; color: var(--ink-2); }
+.banner b { color: var(--ink); }
+.banner.warn { border-left-color: var(--warn); }
+code.url { display: block; word-break: break-all; background: var(--card-2); border-radius: 10px; padding: 10px; font-size: 13px; margin: 6px 0 12px; color: var(--ink-2); }
+.locked { text-align: center; padding: 24px 16px; }
+.locked .lock { font-size: 36px; }
+/* lab status */
+.st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px 3px 7px; border-radius: 999px; white-space: nowrap; }
+.st i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 11px; color: #000; }
+.st.good { background: rgba(51,209,122,.14); color: var(--good); } .st.good i { background: var(--good); }
+.st.warn { background: rgba(255,197,51,.14); color: var(--warn); } .st.warn i { background: var(--warn); }
+.st.bad { background: rgba(255,90,74,.16); color: var(--bad); } .st.bad i { background: var(--bad); }
+.st.none { background: var(--card-2); color: var(--ink-2); } .st.none i { background: var(--none); }
+.lab-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.lab-row:first-of-type { border-top: 0; }
+.lab-row .dot { width: 10px; align-self: stretch; border-radius: 6px; flex: none; }
+.lab-row .dot.good { background: var(--good); } .lab-row .dot.warn { background: var(--warn); } .lab-row .dot.bad { background: var(--bad); } .lab-row .dot.none { background: var(--none); }
+.lab-row .nm { font-weight: 700; font-size: 16px; }
+.lab-row .val { font-family: var(--num); font-size: 26px; font-weight: 800; white-space: nowrap; text-align: right; line-height: 1; }
+.lab-row .val small { font-family: "Barlow", sans-serif; font-size: 12px; font-weight: 500; color: var(--ink-3); display: block; margin-top: 3px; }
+.lab-row .chev { color: var(--ink-3); font-size: 20px; }
+.counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.counts div { background: var(--card); border-radius: var(--radius); padding: 12px; text-align: center; }
+.counts b { display: block; font-family: var(--num); font-size: 34px; font-weight: 800; line-height: 1; }
+.counts span { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.counts .good b { color: var(--good); } .counts .warn b { color: var(--warn); } .counts .bad b { color: var(--bad); }
+dl.gloss dt { font-weight: 700; margin-top: 12px; }
+dl.gloss dd { margin: 2px 0 0; color: var(--ink-2); font-size: 15px; }
+.bands { width: 100%; font-size: 14px; }
+.bands td { padding: 7px 4px; }
+.bands tr.me td { background: var(--card-2); }
+.bands tr.me td:first-child { border-radius: 8px 0 0 8px; } .bands tr.me td:last-child { border-radius: 0 8px 8px 0; }
+.src li { margin: 6px 0; font-size: 14px; }
+.src a { color: var(--ink-2); }
+/* bottom sheet */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 30; display: none; }
+.sheet-bg.open { display: block; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; max-height: 92vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: #101010; border-radius: 22px 22px 0 0; padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  transform: translateY(100%); transition: transform .28s ease; max-width: 640px; margin: 0 auto; border-top: 1px solid var(--line);
+}
+.sheet.open { transform: translateY(0); }
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 4px auto 10px; }
+.sheet h3 { font-family: var(--num); font-size: 30px; font-weight: 800; text-transform: uppercase; margin: 0; line-height: 1.1; }
+.sheet h4 { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); margin: 20px 0 6px; }
+.sheet p { margin: 0 0 8px; }
+.sheet ul.tips { margin: 0; padding-left: 20px; } .sheet ul.tips li { margin: 5px 0; }
+nav.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  background: rgba(10,10,10,.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+nav.tabs button {
+  border: 0; background: none; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--ink-3); padding: 4px 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 52px;
+}
+nav.tabs button svg { width: 26px; height: 26px; }
+nav.tabs button.on { color: #fff; }
+nav.tabs button.on svg { color: var(--accent); }
+#toast {
+  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
+  background: #fff; color: #000; font-weight: 600; padding: 11px 18px; border-radius: 999px; font-size: 15px; opacity: 0;
+  transition: opacity .25s, transform .25s; pointer-events: none; z-index: 40; max-width: calc(100% - 32px); text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (max-width: 370px) { .tile .value { font-size: 30px; } .hero .big { font-size: 54px; } .stats3 .tile .value { font-size: 24px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div><div class="eyebrow" id="eyebrow"></div><h1 id="title">Home</h1></div>
+  <button class="icon-btn" data-act="settings" aria-label="Settings">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+<main id="view"></main>
+<nav class="tabs" id="tabs"></nav>
+<div class="sheet-bg" id="sheetBg" data-act="closeSheet"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+// =====================================================================
+// Storage
+// =====================================================================
+const KEY = "healthTracker.v1";
+const DEFAULTS = {
+  v: 2,
+  settings: {
+    heightIn: null, startWeight: 220, startDate: "2026-08-18", goals: [207, 205, 197],
+    cardioTarget: 150, fastTarget: 16, plankGoal: 60, pushupGoal: 25,
+    shouldersCleared: false, clearedDate: null, lastBackup: null, lastSync: null
+  },
+  weights: [], meals: [], fasts: [], cheats: [], cardio: [], planks: [], pushups: [], labs: []
+};
+// Readings you gave me to start with (lbs). Added once; never overwrite an existing reading.
+const BACKFILL = [
+  ["2026-08-18", 220.0, "other", "Starting weight, doctor's office"],
+  ["2026-10-09", 215.6, "walk", ""],
+  ["2026-10-16", 213.8, "wake", ""],
+  ["2026-10-23", 211.6, "wake", ""],
+  ["2026-10-25", 213.8, "wake", ""],
+  ["2026-10-26", 209.8, "wake", ""],
+  ["2026-10-27", 209.8, "wake", ""]
+];
+const TYPES = { wake: "Wake-up", walk: "Post-walk", other: "Other" };
+
+function load() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+  const db = JSON.parse(JSON.stringify(DEFAULTS));
+  if (saved && typeof saved === "object") {
+    for (const k of Object.keys(DEFAULTS)) if (Array.isArray(DEFAULTS[k]) && Array.isArray(saved[k])) db[k] = saved[k];
+    Object.assign(db.settings, saved.settings || {});
+    db.v = saved.v || 1;
+  } else db.v = 1;
+  return migrate(db);
+}
+function migrate(db) {
+  if (db.v < 2) {
+    db.weights.forEach(w => { w.id = w.id || uid(); w.type = w.type || "wake"; });
+    db.labs.forEach(l => { if (l.range == null) { l.range = l.note || ""; delete l.note; } });
+    if (!db.settings.startWeight || db.settings.startWeight === 209) db.settings.startWeight = 220;
+    db.settings.startDate = db.settings.startDate || "2026-08-18";
+    db.v = 2;
+  }
+  if (!db.settings.backfilled) {
+    for (const [date, w, type, note] of BACKFILL)
+      if (!db.weights.some(x => x.date === date && x.type === type))
+        db.weights.push({ id: uid(), date, w, type, note, src: "manual" });
+    db.settings.backfilled = true;
+  }
+  return db;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(db)); }
+  catch (e) { alert("Couldn't save on this device: " + e.message); }
+}
+
+// =====================================================================
+// Helpers
+// =====================================================================
+const $ = (s, el = document) => el.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+const dstr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => dstr(new Date());
+const parseD = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseD(s); d.setDate(d.getDate() + n); return dstr(d); };
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtD = s => { const d = parseD(s); return `${MON[d.getMonth()]} ${d.getDate()}`; };
+const fmtDY = s => parseD(s).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+const fmtDay = s => s === today() ? "Today" : s === addDays(today(), -1) ? "Yesterday" : parseD(s).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+const fmtTime = iso => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtDT = iso => `${fmtDay(dstr(new Date(iso)))}, ${fmtTime(iso)}`;
+const fmtDur = ms => { const m = Math.max(0, Math.round(ms / 60000)); return `${Math.floor(m / 60)}h ${pad(m % 60)}m`; };
+const r1 = n => n == null || isNaN(n) ? "—" : (Math.round(n * 10) / 10).toFixed(1);
+const signed = n => n == null ? "—" : (n > 0.05 ? "+" : n < -0.05 ? "−" : "") + r1(Math.abs(n));
+const num = v => {
+  if (v == null) return null;
+  const s = String(v).replace(",", ".").replace(/[^0-9.\-]/g, "");
+  if (s === "" || s === "." || s === "-") return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+};
+const localInput = d => `${dstr(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const weekStart = s => { const d = parseD(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return dstr(d); };
+const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2800);
+}
+
+let db = load(); save();
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+
+// =====================================================================
+// Weight math
+// =====================================================================
+const byDate = (a, b) => a.date.localeCompare(b.date) || (a.type === "wake" ? -1 : 1);
+const allWeights = () => [...db.weights].sort(byDate);
+const wakeWeights = () => allWeights().filter(w => w.type === "wake");
+// Trend readings: wake-up only. Falls back to all readings until you have a wake-up one.
+const trendWeights = () => wakeWeights().length ? wakeWeights() : allWeights();
+function avg7(ws, endDate) {
+  const start = addDays(endDate, -6);
+  return mean(ws.filter(w => w.date >= start && w.date <= endDate).map(w => w.w));
+}
+const latest = () => { const t = trendWeights(); return t[t.length - 1] || null; };
+const bmiFor = w => db.settings.heightIn ? 703 * w / (db.settings.heightIn ** 2) : null;
+function weekSummary(ws, ws0) {
+  const end = addDays(ws0, 6);
+  const vals = ws.filter(w => w.date >= ws0 && w.date <= end).map(w => w.w);
+  return { start: ws0, avg: mean(vals), n: vals.length };
+}
+function upsertWeight(entry) {
+  const i = db.weights.findIndex(w => w.date === entry.date && w.type === entry.type);
+  if (i >= 0) {
+    const merged = { ...db.weights[i] };
+    for (const [k, v] of Object.entries(entry)) if (v != null && v !== "") merged[k] = v;
+    db.weights[i] = merged;
+  } else db.weights.push({ id: uid(), ...entry });
+  save();
+}
+
+// =====================================================================
+// Apple Health sync via link (from the iPhone Shortcut)
+// =====================================================================
+function handleSyncLink() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has("w")) return;
+  const w = num(p.get("w"));
+  let bf = num(p.get("bf"));
+  if (bf != null && bf > 0 && bf < 1) bf = bf * 100; // Health sometimes gives 0.241 for 24.1%
+  const dm = (p.get("d") || "").match(/\d{4}-\d{2}-\d{2}/);
+  const date = dm ? dm[0] : today();
+  const type = TYPES[p.get("t")] ? p.get("t") : "wake";
+  history.replaceState(null, "", location.pathname + location.hash);
+  if (w == null || w < 50 || w > 700) { setTimeout(() => toast("Sync link had no usable weight"), 300); return; }
+  const entry = { date, type, w: Math.round(w * 10) / 10, src: "health" };
+  if (bf != null && bf > 0 && bf < 80) entry.bf = Math.round(bf * 10) / 10;
+  const bmi = num(p.get("bmi")); if (bmi != null && bmi > 5 && bmi < 100) entry.bmi = Math.round(bmi * 10) / 10;
+  const lean = num(p.get("lean")); if (lean != null && lean > 20 && lean < 500) entry.lean = Math.round(lean * 10) / 10;
+  const mm = num(p.get("mm")); if (mm != null && mm > 20 && mm < 500) entry.muscle = Math.round(mm * 10) / 10;
+  upsertWeight(entry);
+  db.settings.lastSync = new Date().toISOString(); save();
+  setTimeout(() => toast(`Synced ${r1(entry.w)} lb from Apple Health (${fmtD(date)})`), 300);
+}
+
+// =====================================================================
+// Chart: inline SVG with smoothed line, goal lines, crosshair tooltip
+// =====================================================================
+function smoothPath(P) {
+  // monotone cubic (no overshoot) through screen points
+  if (!P.length) return "";
+  if (P.length < 3) return P.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
+  const n = P.length, d = [], m = [];
+  for (let i = 0; i < n - 1; i++) d[i] = (P[i + 1][1] - P[i][1]) / ((P[i + 1][0] - P[i][0]) || 1e-6);
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+    if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+  }
+  let path = `M${P[0][0].toFixed(1)},${P[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = P[i + 1][0] - P[i][0];
+    path += `C${(P[i][0] + h / 3).toFixed(1)},${(P[i][1] + m[i] * h / 3).toFixed(1)} ${(P[i + 1][0] - h / 3).toFixed(1)},${(P[i + 1][1] - m[i + 1] * h / 3).toFixed(1)} ${P[i + 1][0].toFixed(1)},${P[i + 1][1].toFixed(1)}`;
+  }
+  return path;
+}
+function drawChart(el, o) {
+  // o: {points:[{t,y,hollow,tip}], line:[{t,y}], refs:[{y,label,strong}], xfmt, label, height}
+  const W = Math.max(280, el.clientWidth || 320), H = o.height || 240, L = 38, R = 46, T = 14, B = 26;
+  if (!o.points.length) { el.innerHTML = `<p class="faint">No readings in this view yet.</p>`; return; }
+  const ts = o.points.map(p => p.t).concat((o.line || []).map(p => p.t));
+  let x0 = Math.min(...ts), x1 = Math.max(...ts);
+  if (x1 - x0 < 6 * 864e5) { x0 -= 3 * 864e5; x1 += 3 * 864e5; }
+  const vals = o.points.map(p => p.y).concat((o.line || []).map(p => p.y), (o.refs || []).map(r => r.y));
+  let y0 = Math.min(...vals), y1 = Math.max(...vals);
+  const span = Math.max(y1 - y0, 1);
+  const step = [0.5, 1, 2, 5, 10, 20, 50].find(s => span / s <= 6) || 100;
+  y0 = Math.floor((y0 - span * 0.04) / step) * step; y1 = Math.ceil((y1 + span * 0.04) / step) * step;
+  const sx = t => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const sy = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  let g = "";
+  for (let v = y0; v <= y1 + 1e-9; v += step) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}" stroke="#262626" stroke-width="1"/>`;
+    g += `<text x="${L - 7}" y="${sy(v) + 4}" text-anchor="end" font-size="11" fill="#7c7c7c">${step < 1 ? v.toFixed(1) : Math.round(v)}</text>`;
+  }
+  // x labels: at the given ticks (e.g. one per month), otherwise 4 evenly spaced
+  let xt = o.xticks ? [...new Set(o.xticks)] : [0, 1, 2, 3].map(i => x0 + (x1 - x0) * i / 3);
+  while (xt.length > 6) xt = xt.filter((_, i) => i % 2 === 0);
+  xt.forEach((t, i) => {
+    const anchor = o.xticks ? (sx(t) - L < 20 ? "start" : W - R - sx(t) < 20 ? "end" : "middle") : i === 0 ? "start" : i === xt.length - 1 ? "end" : "middle";
+    g += `<text x="${sx(t)}" y="${H - 7}" text-anchor="${anchor}" font-size="11" fill="#7c7c7c">${(o.xfmt || (d => fmtD(d)))(dstr(new Date(t)))}</text>`;
+  });
+  for (const r of o.refs || []) {
+    const ry = sy(r.y);
+    g += `<line x1="${L}" x2="${W - R}" y1="${ry}" y2="${ry}" stroke="${r.strong ? "#ffffff" : "#9a9a9a"}" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"/>`;
+    g += `<text x="${W - R + 6}" y="${ry + 4}" font-size="11" font-weight="700" fill="${r.strong ? "#ffffff" : "#9a9a9a"}">${esc(r.label)}</text>`;
+  }
+  const big = o.points.length < 40;
+  const dots = o.points.map(p => p.hollow
+    ? `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="#151515" stroke="#8a8a8a" stroke-width="2"/>`
+    : `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="#ffffff" stroke="#151515" stroke-width="2"/>`).join("");
+  const path = o.line && o.line.length ? smoothPath(o.line.map(p => [sx(p.t), sy(p.y)])) : "";
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || "chart")}">${g}
+    ${path ? `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+    ${dots}
+    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#7c7c7c" stroke-width="1" visibility="hidden"/>
+    <circle class="hl" r="7" fill="var(--accent)" stroke="#fff" stroke-width="2" visibility="hidden"/>
+  </svg><div class="tip"></div>`;
+  const svg = $("svg", el), tip = $(".tip", el), cross = $(".cross", el), hl = $(".hl", el);
+  const show = ev => {
+    const rect = svg.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * (W / rect.width);
+    let best = 0, bd = Infinity;
+    o.points.forEach((p, i) => { const d = Math.abs(sx(p.t) - px); if (d < bd) { bd = d; best = i; } });
+    const p = o.points[best], cx = sx(p.t);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+    hl.setAttribute("cx", cx); hl.setAttribute("cy", sy(p.y)); hl.setAttribute("visibility", "visible");
+    tip.innerHTML = p.tip; tip.style.display = "block";
+    const left = cx * rect.width / W, half = tip.offsetWidth / 2;
+    tip.style.left = Math.min(Math.max(left, half), rect.width - half) + "px";
+    tip.style.top = Math.max(-8, sy(p.y) * rect.height / H - tip.offsetHeight - 14) + "px";
+  };
+  const hide = () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); hl.setAttribute("visibility", "hidden"); };
+  svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointermove", show);
+  svg.addEventListener("pointerleave", hide);
+}
+const tms = s => parseD(s).getTime();
+
+// =====================================================================
+// Blood work: reference data
+// =====================================================================
+// Each source is [label, url]. Ranges come from these; see the "Where the ranges come from" card.
+const S = {
+  medChol: ["MedlinePlus (NIH): Cholesterol levels — what you need to know", "https://medlineplus.gov/cholesterollevelswhatyouneedtoknow.html"],
+  nhlbi: ["NHLBI (NIH): Blood cholesterol", "https://www.nhlbi.nih.gov/health/blood-cholesterol"],
+  aha: ["American Heart Association: Cholesterol", "https://www.heart.org/en/health-topics/cholesterol"],
+  medTrig: ["MedlinePlus: Triglycerides test", "https://medlineplus.gov/lab-tests/triglycerides-test/"],
+  cdcDiab: ["CDC: Diabetes testing", "https://www.cdc.gov/diabetes/diabetes-testing/index.html"],
+  ada: ["American Diabetes Association: Understanding A1C", "https://diabetes.org/about-diabetes/a1c"],
+  medA1c: ["MedlinePlus: Hemoglobin A1C test", "https://medlineplus.gov/lab-tests/hemoglobin-a1c-hba1c-test/"],
+  medGlu: ["MedlinePlus: Blood glucose test", "https://medlineplus.gov/lab-tests/blood-glucose-test/"],
+  crp: ["AHA/CDC scientific statement on markers of inflammation (Circulation, 2003)", "https://www.ahajournals.org/doi/10.1161/01.CIR.0000052939.59093.45"],
+  medCrp: ["MedlinePlus: C-reactive protein test", "https://medlineplus.gov/lab-tests/c-reactive-protein-crp-test/"],
+  ods: ["NIH Office of Dietary Supplements: Vitamin D fact sheet", "https://ods.od.nih.gov/factsheets/VitaminD-Consumer/"],
+  medD: ["MedlinePlus: Vitamin D test", "https://medlineplus.gov/lab-tests/vitamin-d-test/"],
+  aua: ["American Urological Association: Testosterone deficiency guideline", "https://www.auanet.org/guidelines-and-quality/guidelines/testosterone-deficiency-guideline"],
+  medT: ["MedlinePlus: Testosterone levels test", "https://medlineplus.gov/lab-tests/testosterone-levels-test/"],
+  niddk: ["NIDDK (NIH): Chronic kidney disease tests & diagnosis", "https://www.niddk.nih.gov/health-information/kidney-disease/chronic-kidney-disease-ckd/tests-diagnosis"],
+  medGfr: ["MedlinePlus: Glomerular filtration rate test", "https://medlineplus.gov/lab-tests/glomerular-filtration-rate-gfr-test/"],
+  medAlt: ["MedlinePlus: ALT blood test", "https://medlineplus.gov/lab-tests/alt-blood-test/"],
+  medAst: ["MedlinePlus: AST test", "https://medlineplus.gov/lab-tests/ast-test/"],
+  medCr: ["MedlinePlus: Creatinine test", "https://medlineplus.gov/lab-tests/creatinine-test/"],
+  medBun: ["MedlinePlus: BUN (blood urea nitrogen) test", "https://medlineplus.gov/lab-tests/bun-blood-urea-nitrogen/"],
+  medTsh: ["MedlinePlus: TSH test", "https://medlineplus.gov/lab-tests/tsh-thyroid-stimulating-hormone-test/"],
+  medHgb: ["MedlinePlus: Hemoglobin test", "https://medlineplus.gov/lab-tests/hemoglobin-test/"],
+  medCbc: ["MedlinePlus: Complete blood count (CBC)", "https://medlineplus.gov/lab-tests/complete-blood-count-cbc/"],
+  medFer: ["MedlinePlus: Ferritin blood test", "https://medlineplus.gov/lab-tests/ferritin-blood-test/"],
+  medUric: ["MedlinePlus: Uric acid test", "https://medlineplus.gov/lab-tests/uric-acid-test/"],
+  medBmp: ["MedlinePlus: Basic metabolic panel (BMP)", "https://medlineplus.gov/lab-tests/basic-metabolic-panel-bmp/"],
+  medIns: ["MedlinePlus: Insulin in blood", "https://medlineplus.gov/lab-tests/insulin-in-blood/"],
+  medLabs: ["MedlinePlus: Lab tests (index)", "https://medlineplus.gov/lab-tests/"]
+};
+const HEART_TIPS = [
+  "Swap saturated fat (fatty red meat, butter, full-fat dairy, fried food) for unsaturated fat (olive oil, nuts, avocado, fish).",
+  "Add soluble fiber — oats, beans, lentils, apples, berries.",
+  "Get at least 150 minutes of moderate activity a week (your incline walks and rides count).",
+  "Losing even 5–10% of body weight tends to improve lipid numbers.",
+  "Limit alcohol and don't smoke."
+];
+// bands: [upper bound (value < this), status, label, display text]. Guideline tests.
+// typ: [low, high] typical adult range when no guideline sets one (labs vary; your lab's range wins).
+const TESTS = [
+  { k: "tc", name: "Total cholesterol", alias: ["cholesterol", "chol", "total chol"], unit: "mg/dL", panel: "Lipid panel",
+    bands: [[200, "good", "Desirable", "Below 200"], [240, "warn", "Borderline high", "200–239"], [Infinity, "bad", "High", "240 and above"]],
+    what: "All the cholesterol in your blood — LDL, HDL and the cholesterol carried by triglyceride-rich particles. Your body needs some to build cells and hormones.",
+    high: "More cholesterol in the blood means more can build up as plaque in artery walls, raising the risk of heart attack and stroke. It's read together with LDL and HDL, since a high HDL can push the total up.",
+    low: "Very low values are uncommon and usually not a worry on their own. Rarely it reflects an overactive thyroid, liver disease or poor nutrition.",
+    tips: HEART_TIPS, src: ["medChol", "nhlbi", "aha"] },
+  { k: "ldl", name: "LDL cholesterol", alias: ["ldl", "ldl-c", "ldl calc", "ldl cholesterol calc"], unit: "mg/dL", panel: "Lipid panel",
+    bands: [[100, "good", "Optimal", "Below 100"], [130, "good", "Near optimal", "100–129"], [160, "warn", "Borderline high", "130–159"], [190, "bad", "High", "160–189"], [Infinity, "bad", "Very high", "190 and above"]],
+    what: "The \"bad\" cholesterol. LDL particles carry cholesterol to your tissues, and extra LDL can lodge in artery walls.",
+    high: "Higher LDL is one of the main drivers of plaque build-up (atherosclerosis) and heart disease. Very high levels (190+) can point to an inherited condition and are usually discussed with a doctor.",
+    low: "Low LDL is generally considered good for heart health.",
+    tips: HEART_TIPS, src: ["medChol", "nhlbi", "aha"] },
+  { k: "hdl", name: "HDL cholesterol", alias: ["hdl", "hdl-c"], unit: "mg/dL", panel: "Lipid panel",
+    bands: [[40, "bad", "Low", "Below 40 (men)"], [60, "good", "Acceptable", "40–59"], [Infinity, "good", "Protective", "60 and above"]],
+    what: "The \"good\" cholesterol. HDL helps carry extra cholesterol back to the liver to be cleared.",
+    high: "Higher HDL is generally linked with lower heart risk.",
+    low: "Low HDL (under 40 for men) is a heart-disease risk factor. It often goes along with inactivity, excess weight, smoking and high triglycerides.",
+    tips: ["Regular aerobic exercise is one of the most reliable ways to raise HDL.", "Losing extra weight and quitting smoking help.", "Choose unsaturated fats over trans and saturated fats."], src: ["medChol", "nhlbi", "aha"] },
+  { k: "nonhdl", name: "Non-HDL cholesterol", alias: ["non-hdl", "non hdl", "non-hdl cholesterol"], unit: "mg/dL", panel: "Lipid panel",
+    bands: [[130, "good", "Desirable", "Below 130"], [160, "warn", "Borderline high", "130–159"], [190, "bad", "High", "160–189"], [Infinity, "bad", "Very high", "190 and above"]],
+    what: "Total cholesterol minus HDL — all the cholesterol carried by particles that can clog arteries.",
+    high: "Like LDL, a higher number means more artery-clogging particles and higher heart risk.",
+    low: "Low values are generally favorable.",
+    tips: HEART_TIPS, src: ["medChol", "nhlbi"] },
+  { k: "tg", name: "Triglycerides", alias: ["trig", "trigs", "triglyceride"], unit: "mg/dL", panel: "Lipid panel",
+    bands: [[150, "good", "Normal", "Below 150"], [200, "warn", "Borderline high", "150–199"], [500, "bad", "High", "200–499"], [Infinity, "bad", "Very high", "500 and above"]],
+    what: "The most common type of fat in the blood. Your body stores extra calories — especially from sugar, refined carbs and alcohol — as triglycerides.",
+    high: "High triglycerides add to heart risk, especially with low HDL or high LDL, and often travel with excess belly fat and insulin resistance. Very high levels (500+) can inflame the pancreas.",
+    low: "Low values are usually not a concern.",
+    tips: ["Cut back on sugary drinks, sweets and refined carbs (white bread, pastries).", "Limit alcohol — it raises triglycerides strongly.", "Eat fatty fish (salmon, sardines) a couple of times a week.", "Regular exercise and weight loss lower triglycerides — often quickly.", "Results are most accurate after an 8–12 hour fast."],
+    src: ["medTrig", "medChol", "aha"] },
+  { k: "glu", name: "Fasting glucose", alias: ["glucose", "fasting blood sugar", "blood sugar", "fbg", "glucose fasting"], unit: "mg/dL", panel: "Metabolic panel",
+    bands: [[70, "warn", "Low", "Below 70"], [100, "good", "Normal", "70–99"], [126, "warn", "Prediabetes range", "100–125"], [Infinity, "bad", "Diabetes range", "126 and above"]],
+    what: "The amount of sugar in your blood after not eating for at least 8 hours. These ranges only apply to a fasting sample.",
+    high: "100–125 is in the prediabetes range; 126 or higher on two separate tests is one way diabetes is diagnosed. A single high reading isn't a diagnosis.",
+    low: "Below 70 can cause shakiness, sweating or confusion. In people not on diabetes medicine it's uncommon and worth mentioning to a doctor.",
+    tips: ["Choose whole grains, beans and vegetables over refined carbs and sugary drinks.", "Stay active — muscles use glucose, and even a walk after meals helps.", "Losing 5–7% of body weight lowers the chance of prediabetes becoming diabetes (CDC National Diabetes Prevention Program).", "Get enough sleep; poor sleep raises blood sugar."],
+    src: ["cdcDiab", "ada", "medGlu"] },
+  { k: "a1c", name: "Hemoglobin A1c", alias: ["a1c", "hba1c", "hgb a1c", "glycated hemoglobin", "hemoglobin a1c"], unit: "%", panel: "Diabetes screening",
+    bands: [[5.7, "good", "Normal", "Below 5.7%"], [6.5, "warn", "Prediabetes range", "5.7–6.4%"], [Infinity, "bad", "Diabetes range", "6.5% and above"]],
+    what: "Your average blood sugar over roughly the past 2–3 months, measured by how much sugar is stuck to your red blood cells. No fasting needed.",
+    high: "5.7–6.4% is the prediabetes range; 6.5% or higher (confirmed by repeat testing) is one way diabetes is diagnosed.",
+    low: "Low values are usually not a concern; certain blood conditions can make A1c less accurate.",
+    tips: ["Same habits that help fasting glucose: fewer refined carbs and sugary drinks, more fiber.", "Regular activity — 150 minutes a week is the common target.", "Steady weight loss tends to bring A1c down over a few months."],
+    src: ["cdcDiab", "ada", "medA1c"] },
+  { k: "crp", name: "hs-CRP", alias: ["crp", "c-reactive protein", "hscrp", "high sensitivity crp", "c reactive protein"], unit: "mg/L", panel: "Inflammation",
+    bands: [[1, "good", "Lower heart risk", "Below 1.0"], [3.0001, "warn", "Average heart risk", "1.0–3.0"], [10, "bad", "Higher heart risk", "Above 3.0"], [Infinity, "bad", "Very high", "10 and above (often infection; usually re-tested)"]],
+    what: "A protein the liver makes when there's inflammation. The \"high-sensitivity\" version is used to help gauge heart risk.",
+    high: "Above 3 mg/L is associated with higher cardiovascular risk. Above 10 usually means a short-term cause like an infection or injury, so it's typically re-tested in a couple of weeks.",
+    low: "Low is the goal.",
+    tips: ["Lose extra weight — body fat is a major source of inflammation.", "Exercise regularly.", "Eat more fruits, vegetables, whole grains and fish; less processed food.", "Don't smoke; get enough sleep."],
+    src: ["crp", "medCrp"] },
+  { k: "vitd", name: "Vitamin D (25-OH)", alias: ["vitamin d", "vit d", "25-oh vitamin d", "25 hydroxy vitamin d", "25-hydroxyvitamin d"], unit: "ng/mL", panel: "Vitamins",
+    bands: [[12, "bad", "Deficient", "Below 12"], [20, "warn", "Inadequate for some people", "12–19"], [50.0001, "good", "Adequate", "20–50"], [Infinity, "warn", "Higher than needed", "Above 50"]],
+    what: "The main storage form of vitamin D, which helps you absorb calcium and keeps bones and muscles healthy.",
+    high: "NIH notes levels above 50 ng/mL may be linked to potential harm; very high levels usually come from too many supplements.",
+    low: "Low vitamin D can weaken bones over time and is common in winter, with darker skin or with little sun exposure. Some labs use 30 ng/mL as their cutoff, which is why their range may differ.",
+    tips: ["Food sources: fatty fish, fortified milk or plant milk, eggs, fortified cereal.", "Some sun exposure helps your skin make vitamin D.", "Ask your doctor before starting high-dose supplements."],
+    src: ["ods", "medD"] },
+  { k: "testo", name: "Testosterone (total)", alias: ["testosterone", "total testosterone", "testosterone total"], unit: "ng/dL", panel: "Hormones",
+    bands: [[300, "warn", "Below 300 (AUA cutoff)", "Below 300"], [Infinity, "good", "At or above 300", "300 and above"]],
+    what: "The main male sex hormone, which supports muscle, bone, energy, mood and sex drive. It's highest in the morning, so tests are usually drawn early.",
+    high: "High levels in men are uncommon without supplements; your lab's upper limit is the best guide.",
+    low: "The American Urological Association uses below 300 ng/dL — on two separate early-morning tests, plus symptoms — to support a diagnosis of low testosterone. Excess weight, poor sleep and some medicines can lower it.",
+    tips: ["Losing excess body fat often raises testosterone.", "Prioritize 7–9 hours of sleep.", "Strength training (once your PT clears you) and regular activity help.", "Limit alcohol."],
+    src: ["aua", "medT"] },
+  { k: "egfr", name: "eGFR", alias: ["gfr", "estimated gfr"], unit: "mL/min/1.73m²", unitAlt: ["ml/min/1.73m2", "ml/min/1.73 m2", "ml/min"], panel: "Kidney",
+    bands: [[45, "bad", "Reduced", "Below 45"], [60, "warn", "Mildly–moderately reduced", "45–59"], [Infinity, "good", "Normal range", "60 and above"]],
+    what: "An estimate of how well your kidneys filter blood, calculated from your creatinine, age and sex.",
+    high: "Higher is generally better.",
+    low: "An eGFR below 60 for three months or more is one sign of chronic kidney disease (NIDDK). A single low reading can be temporary — dehydration and heavy exercise can lower it.",
+    tips: ["Keep blood pressure and blood sugar in a healthy range.", "Stay hydrated.", "Limit regular use of NSAID pain relievers (ibuprofen, naproxen) unless your doctor says otherwise.", "Cut back on sodium."],
+    src: ["niddk", "medGfr"] },
+  { k: "alt", name: "ALT", alias: ["alt (sgpt)", "sgpt", "alanine aminotransferase"], unit: "U/L", panel: "Liver", typ: [7, 56],
+    what: "A liver enzyme. When liver cells are irritated or damaged, ALT leaks into the blood.",
+    high: "Mildly high ALT is often linked to fatty liver (common with extra weight), alcohol, some medicines or supplements, or hard exercise in the days before the test.",
+    low: "Low ALT is usually not a concern.",
+    tips: ["Gradual weight loss is the main way to reduce fatty liver.", "Limit alcohol.", "Cut back on sugary drinks and refined carbs.", "Tell your doctor about any supplements you take."],
+    src: ["medAlt"] },
+  { k: "ast", name: "AST", alias: ["ast (sgot)", "sgot", "aspartate aminotransferase"], unit: "U/L", panel: "Liver", typ: [8, 48],
+    what: "An enzyme found mainly in the liver, and also in muscles and the heart.",
+    high: "Can rise with liver irritation (fatty liver, alcohol, medicines) — and also after a hard workout, because muscles release AST too.",
+    low: "Low AST is usually not a concern.",
+    tips: ["Same as ALT: steady weight loss, less alcohol, fewer refined carbs.", "Avoid very hard workouts in the 1–2 days before a blood draw."],
+    src: ["medAst"] },
+  { k: "cr", name: "Creatinine", alias: ["creat", "serum creatinine"], unit: "mg/dL", panel: "Kidney", typ: [0.74, 1.35],
+    what: "A waste product from normal muscle use that healthy kidneys filter out.",
+    high: "Can mean the kidneys aren't filtering as well — but also rises with dehydration, high muscle mass, heavy exercise or lots of protein/creatine supplements.",
+    low: "Often reflects lower muscle mass; usually not a concern.",
+    tips: ["Stay hydrated before blood tests.", "Mention creatine supplements or heavy training to your doctor.", "Keep blood pressure and blood sugar in check."],
+    src: ["medCr", "niddk"] },
+  { k: "bun", name: "BUN", alias: ["blood urea nitrogen", "urea nitrogen"], unit: "mg/dL", panel: "Kidney", typ: [7, 20],
+    what: "Blood urea nitrogen — a waste product from breaking down protein, cleared by the kidneys.",
+    high: "Can be from dehydration, a high-protein diet, or reduced kidney function.",
+    low: "Can occur with a low-protein diet; usually not a concern on its own.",
+    tips: ["Drink enough water, especially around workouts.", "Read it alongside creatinine and eGFR."], src: ["medBun", "medBmp"] },
+  { k: "tsh", name: "TSH", alias: ["thyroid stimulating hormone", "thyrotropin"], unit: "mIU/L", unitAlt: ["uiu/ml", "µiu/ml", "miu/l"], panel: "Thyroid", typ: [0.4, 4.5],
+    what: "Thyroid-stimulating hormone — the pituitary gland's signal telling your thyroid how hard to work.",
+    high: "High TSH usually means the thyroid is underactive (hypothyroidism), which can cause tiredness, weight gain and feeling cold.",
+    low: "Low TSH can mean an overactive thyroid (hyperthyroidism), which can cause a racing heart, weight loss and anxiety.",
+    tips: ["Thyroid problems are mostly medical, not lifestyle — share abnormal results with your doctor.", "Biotin supplements can throw off thyroid tests; stop them a few days before a draw if your doctor agrees."],
+    src: ["medTsh"] },
+  { k: "hgb", name: "Hemoglobin", alias: ["hgb", "hb", "haemoglobin"], unit: "g/dL", panel: "Blood count (CBC)", typ: [13.2, 16.6],
+    what: "The protein in red blood cells that carries oxygen.",
+    high: "Can be from dehydration, smoking, living at altitude, or testosterone therapy.",
+    low: "Low hemoglobin (anemia) can cause tiredness and shortness of breath — often from low iron, blood loss, or vitamin B12/folate shortfalls.",
+    tips: ["Iron-rich foods: lean meat, beans, lentils, spinach; vitamin C helps absorb plant iron.", "Don't take iron supplements unless a doctor recommends it."],
+    src: ["medHgb", "medCbc"] },
+  { k: "wbc", name: "White blood cells (WBC)", alias: ["wbc", "white blood cell count", "white count", "leukocytes"], unit: "×10³/µL", unitAlt: ["k/ul", "x10e3/ul", "10^3/ul", "thou/ul", "x10^3/ul", "10*3/ul"], panel: "Blood count (CBC)", typ: [4.5, 11.0],
+    what: "Your infection-fighting cells.",
+    high: "Most often from an infection, inflammation, stress, smoking or some medicines.",
+    low: "Can follow a viral illness or some medicines; persistent low counts are worth a follow-up.",
+    tips: ["A single mildly abnormal count is common; doctors usually look at the trend."], src: ["medCbc"] },
+  { k: "plt", name: "Platelets", alias: ["plt", "platelet count"], unit: "×10³/µL", unitAlt: ["k/ul", "x10e3/ul", "10^3/ul", "thou/ul", "x10^3/ul", "10*3/ul"], panel: "Blood count (CBC)", typ: [150, 450],
+    what: "Cell fragments that help your blood clot.",
+    high: "Can follow inflammation, infection or low iron.",
+    low: "Can follow viral infections, heavy alcohol use or some medicines; very low counts raise bleeding risk.",
+    tips: ["Limit alcohol.", "Read alongside the rest of the CBC."], src: ["medCbc"] },
+  { k: "na", name: "Sodium", alias: ["na", "sodium serum"], unit: "mmol/L", unitAlt: ["meq/l"], panel: "Metabolic panel", typ: [135, 145],
+    what: "An electrolyte that controls fluid balance, nerves and muscles. Blood sodium reflects water balance more than how much salt you eat.",
+    high: "Usually from not drinking enough water.",
+    low: "Can come from drinking a lot of water during long exercise, some medicines, or certain medical conditions.",
+    tips: ["Hydrate steadily; on long sweaty workouts consider electrolytes rather than only plain water."], src: ["medBmp"] },
+  { k: "k", name: "Potassium", alias: ["k", "potassium serum"], unit: "mmol/L", unitAlt: ["meq/l"], panel: "Metabolic panel", typ: [3.5, 5.0],
+    what: "An electrolyte important for heart rhythm and muscle function.",
+    high: "Can come from kidney problems, some blood-pressure medicines — or a sample that was handled roughly (a common false high).",
+    low: "Can come from vomiting, diarrhea, heavy sweating or some diuretics.",
+    tips: ["Potassium-rich foods: bananas, potatoes, beans, leafy greens, yogurt."], src: ["medBmp"] },
+  { k: "fer", name: "Ferritin", alias: ["ferritin serum"], unit: "ng/mL", panel: "Iron", typ: [24, 336],
+    what: "A protein that stores iron — a measure of your iron reserves.",
+    high: "Can mean too much stored iron, but also rises with inflammation, fatty liver and heavy drinking.",
+    low: "The most specific sign of low iron stores, even before anemia shows up.",
+    tips: ["Iron-rich foods plus vitamin C help low ferritin.", "Avoid iron supplements unless a doctor recommends them — extra iron isn't harmless."],
+    src: ["medFer"] },
+  { k: "uric", name: "Uric acid", alias: ["urate"], unit: "mg/dL", panel: "Metabolic", typ: [3.4, 7.0],
+    what: "A waste product from breaking down purines (found in some foods and made by the body).",
+    high: "High levels can cause gout or kidney stones; often linked with extra weight, alcohol (especially beer), sugary drinks and red meat or organ meats.",
+    low: "Usually not a concern.",
+    tips: ["Limit beer, liquor and sugary drinks (fructose).", "Moderate red meat, organ meats and some seafood.", "Drink plenty of water; weight loss helps."],
+    src: ["medUric"] },
+  { k: "ins", name: "Fasting insulin", alias: ["insulin", "insulin fasting"], unit: "µIU/mL", unitAlt: ["uiu/ml", "miu/l"], panel: "Diabetes screening",
+    what: "The hormone that moves sugar from your blood into cells. Fasting levels can hint at insulin resistance.",
+    high: "A high fasting insulin with normal glucose can be an early sign of insulin resistance, often tied to extra belly fat.",
+    low: "Read with glucose; low insulin with high glucose needs a doctor's review.",
+    tips: ["Regular exercise and weight loss improve insulin sensitivity.", "Fewer refined carbs and sugary drinks."],
+    note: "There's no single standard range for fasting insulin — status uses your lab's range only.",
+    src: ["medIns"] },
+  { k: "apob", name: "ApoB", alias: ["apolipoprotein b", "apo b", "apo-b"], unit: "mg/dL", panel: "Lipid (advanced)",
+    what: "Counts the number of artery-clogging particles (one ApoB per LDL-type particle).",
+    high: "Higher ApoB means more particles that can enter artery walls — a heart-risk marker some doctors use alongside LDL.",
+    low: "Lower is generally better.",
+    tips: HEART_TIPS,
+    note: "No single public consumer range is used for ApoB — status uses your lab's range only.",
+    src: ["aha", "medLabs"] }
+];
+const GLOSSARY = [
+  ["Reference range", "The span of results seen in most healthy people, set by each lab for its own equipment. Being a little outside it isn't automatically a problem."],
+  ["H / L flag", "Marks on a lab report meaning a result is above (H) or below (L) that lab's reference range."],
+  ["Fasting", "No food or calorie-containing drinks (water is fine) for usually 8–12 hours before the draw. Glucose and triglycerides are affected by eating."],
+  ["Baseline", "Your first set of results, used as the starting point to compare future tests against."],
+  ["Borderline", "Close to the line between normal and high (or low) — a nudge to pay attention, not a diagnosis."],
+  ["Lipid panel", "Cholesterol test: total cholesterol, LDL, HDL, triglycerides and often non-HDL."],
+  ["BMP / CMP", "Basic or comprehensive metabolic panel: glucose, electrolytes (sodium, potassium), kidney markers (BUN, creatinine, eGFR) — the CMP adds liver tests and proteins."],
+  ["CBC", "Complete blood count: red cells, hemoglobin, white cells and platelets."],
+  ["Electrolytes", "Minerals like sodium and potassium that carry electrical charges and control fluid balance, nerves and muscles."],
+  ["Enzyme", "A protein that speeds up chemical reactions. Liver enzymes (ALT, AST) leak into blood when cells are irritated."],
+  ["Lipoprotein", "A particle that carries fat and cholesterol through blood — LDL and HDL are lipoproteins."],
+  ["Prediabetes", "Blood sugar higher than normal but not in the diabetes range. Often reversible with weight loss and activity."],
+  ["Inflammation marker", "A test like hs-CRP that rises when the body is inflamed."],
+  ["mg/dL", "Milligrams per deciliter — the amount of a substance in a tenth of a liter of blood. Standard US unit for cholesterol and glucose."],
+  ["mmol/L", "Millimoles per liter — the unit used in most other countries (and in the US for electrolytes)."],
+  ["U/L", "Units per liter — how much enzyme activity is in the blood."],
+  ["ng/mL, ng/dL", "Nanograms per milliliter or deciliter — used for very small amounts, like vitamin D and testosterone."]
+];
+const norm = s => String(s || "").toLowerCase().replace(/[\s.]/g, "").replace(/μ/g, "µ").replace(/µ/g, "u").replace(/³/g, "3").replace(/²/g, "2").replace(/×/g, "x");
+function findTest(name) {
+  const n = String(name || "").trim().toLowerCase();
+  return TESTS.find(t => t.name.toLowerCase() === n || t.alias.includes(n)) || null;
+}
+const unitOk = (t, unit) => !unit || norm(unit) === norm(t.unit) || (t.unitAlt || []).some(u => norm(u) === norm(unit));
+function parseRange(s) {
+  if (!s) return null;
+  const x = String(s).replace(/[–—]/g, "-").replace(/,/g, "");
+  let m = x.match(/^\s*(<=|>=|<|>|≤|≥)\s*(\d*\.?\d+)/);
+  if (m) return /[<≤]/.test(m[1]) ? { lo: null, hi: +m[2] } : { lo: +m[2], hi: null };
+  m = x.match(/(\d*\.?\d+)\s*(?:-|to)\s*(\d*\.?\d+)/i);
+  if (m) return { lo: +m[1], hi: +m[2] };
+  return null;
+}
+const fmtRange = r => r.lo != null && r.hi != null ? `${r.lo}–${r.hi}` : r.hi != null ? `below ${r.hi}` : `above ${r.lo}`;
+function rangeEval(v, r) {
+  const w = r.lo != null && r.hi != null ? r.hi - r.lo : null;
+  if ((r.lo == null || v >= r.lo) && (r.hi == null || v <= r.hi)) return { st: "good", label: "In range" };
+  if (r.hi != null && v > r.hi) { const tol = (w ?? r.hi) * 0.1; return v - r.hi <= tol ? { st: "warn", label: "Slightly high" } : { st: "bad", label: "High" }; }
+  const tol = (w ?? r.lo) * 0.1; return r.lo - v <= tol ? { st: "warn", label: "Slightly low" } : { st: "bad", label: "Low" };
+}
+function evalLab(l) {
+  const t = findTest(l.name), v = num(l.value), lab = parseRange(l.range);
+  const out = { t, v, lab, basis: null };
+  if (v == null) return { ...out, st: "none", label: "Not a number" };
+  if (lab) return { ...out, ...rangeEval(v, lab), basis: "lab" };
+  if (t && unitOk(t, l.unit)) {
+    if (t.bands) { const b = t.bands.find(b => v < b[0]); return { ...out, st: b[1], label: b[2], basis: "guide", band: b }; }
+    if (t.typ) return { ...out, ...rangeEval(v, { lo: t.typ[0], hi: t.typ[1] }), basis: "typical" };
+  }
+  if (t && !unitOk(t, l.unit)) return { ...out, st: "none", label: "Different unit — add lab range" };
+  return { ...out, st: "none", label: "Add lab's range to rate" };
+}
+const ST_ICON = { good: "✓", warn: "!", bad: "!!", none: "–" };
+const stChip = e => `<span class="st ${e.st}"><i>${ST_ICON[e.st]}</i>${esc(e.label)}</span>`;
+const labKey = l => { const t = findTest(l.name); return t ? t.k : "x:" + l.name.trim().toLowerCase(); };
+function labGroups() {
+  const g = {};
+  for (const l of db.labs) (g[labKey(l)] = g[labKey(l)] || []).push(l);
+  for (const k in g) g[k].sort((a, b) => a.date.localeCompare(b.date));
+  return g;
+}
+const ORDER = { bad: 0, warn: 1, none: 2, good: 3 };
+
+// =====================================================================
+// Navigation
+// =====================================================================
+const ICONS = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>',
+  weight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8.5 9.5a5 5 0 0 1 7 0"/><path d="M12 9.5 13.2 7.6"/></svg>',
+  food: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M10 2h4"/></svg>',
+  fitness: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  labs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21.5h11.6a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7 15h10"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
+};
+const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Food"], ["fitness", "Fitness"], ["labs", "Labs"]];
+let current = "home";
+try { current = localStorage.getItem(KEY + ".tab") || "home"; } catch (e) {}
+let wView = "daily";
+let openLab = null;
+
+function renderTabs() {
+  $("#tabs").innerHTML = TABS.map(([id, label]) =>
+    `<button data-tab="${id}" class="${current === id ? "on" : ""}" aria-label="${label}">${ICONS[id]}<span>${label}</span></button>`).join("");
+}
+function greeting() {
+  const h = new Date().getHours();
+  return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + " · " + new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+function render() {
+  const views = { home: viewHome, weight: viewWeight, food: viewFood, fitness: viewFitness, labs: viewLabs, settings: viewSettings };
+  if (!views[current]) current = "home";
+  $("#eyebrow").textContent = greeting();
+  $("#title").textContent = current === "settings" ? "Settings" : current === "home" ? "Dashboard" : TABS.find(t => t[0] === current)[1];
+  $("#view").innerHTML = views[current]();
+  renderTabs();
+  if (current === "weight") drawWeightCharts();
+  renderSheet();
+}
+function go(tab, focus) {
+  current = tab;
+  try { if (tab !== "settings") localStorage.setItem(KEY + ".tab", tab); } catch (e) {}
+  window.scrollTo(0, 0); render();
+  if (focus) { const d = document.getElementById(focus); if (d) { if (d.tagName === "DETAILS") d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } }
+}
+
+// =====================================================================
+// Home dashboard
+// =====================================================================
+function viewHome() {
+  const s = db.settings, last = latest(), tw = trendWeights(), t = today();
+  const lost = last ? s.startWeight - last.w : null;
+  const goals = [...s.goals].sort((a, b) => b - a), finalG = goals[goals.length - 1];
+  const next = goals.find(g => !last || last.w > g);
+  const pctAll = last ? Math.max(0, Math.min(100, (s.startWeight - last.w) / (s.startWeight - finalG) * 100)) : 0;
+  const thisW = weekSummary(tw, weekStart(t)), prevW = weekSummary(tw, addDays(weekStart(t), -7));
+  const wd = thisW.avg != null && prevW.avg != null ? thisW.avg - prevW.avg : null;
+  const active = db.fasts.find(f => !f.end);
+  const cardio = db.cardio.filter(c => c.date >= weekStart(t)).reduce((a, c) => a + c.min, 0);
+  const g = labGroups(), evals = Object.values(g).map(a => evalLab(a[a.length - 1]));
+  const nBad = evals.filter(e => e.st === "bad").length, nWarn = evals.filter(e => e.st === "warn").length;
+  return `
+  <div class="card hero">
+    <div class="hero-row">
+      <div><div class="label">Current weight</div>
+        <div class="big n">${last ? r1(last.w) : "—"}<small>lb</small></div>
+        <div class="faint">${last ? `${TYPES[last.type]} · ${fmtDay(last.date)}` : "No weigh-ins yet"}</div></div>
+      <div class="lost"><div class="label">Lost since ${fmtD(s.startDate)}</div>
+        <div class="v">${lost != null ? (lost >= 0 ? "−" : "+") + r1(Math.abs(lost)) : "—"}</div><div class="faint">from ${r1(s.startWeight)} lb</div></div>
+    </div>
+    <div class="bar" style="margin-top:16px"><span style="width:${pctAll}%"></span></div>
+    <div class="faint" style="margin-top:6px;display:flex;justify-content:space-between"><span>${r1(s.startWeight)}</span><span>${Math.round(pctAll)}% to ${finalG}</span><span>${finalG}</span></div>
+  </div>
+  <div class="actions">
+    <button data-act="quick" data-go="weight" data-focus="logWeight">${ICONS.plus}Log weight</button>
+    <button data-act="${active ? "endFast" : "startFast"}">${ICONS.food}${active ? "End fast" : "Start fast"}</button>
+    <button data-act="quick" data-go="fitness" data-focus="cardioForm">${ICONS.fitness}Log cardio</button>
+  </div>
+  <div class="grid2">
+    <button class="tile" data-tab="weight"><div class="label">This week avg</div>
+      <div class="value n">${r1(thisW.avg)}<small>lb</small></div>
+      <div class="sub ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${wd == null ? "Need 2 weeks of data" : `${wd <= 0 ? "▼" : "▲"} ${r1(Math.abs(wd))} vs last week`}</div></button>
+    <button class="tile" data-tab="weight"><div class="label">Next milestone</div>
+      <div class="value n">${next ?? finalG}<small>lb</small></div>
+      <div class="sub">${last && next ? `${r1(last.w - next)} lb to go` : "Maintenance — hold steady"}</div></button>
+    <button class="tile" data-tab="food"><div class="label">${active ? "Fasting" : "Fasting window"}</div>
+      <div class="value n">${active ? fmtDur(Date.now() - new Date(active.start)) : "Eating"}</div>
+      <div class="sub">${active ? `Goal ${s.fastTarget}h · started ${fmtTime(active.start)}` : "Tap to start a fast"}</div>
+      ${active ? `<div class="bar"><span style="width:${Math.min(100, (Date.now() - new Date(active.start)) / (s.fastTarget * 36e5) * 100)}%"></span></div>` : ""}</button>
+    <button class="tile" data-tab="fitness"><div class="label">Cardio this week</div>
+      <div class="value n">${cardio}<small>/ ${s.cardioTarget}</small></div>
+      <div class="sub">${cardio >= s.cardioTarget ? "Target hit 🔥" : `${s.cardioTarget - cardio} min to go`}</div>
+      <div class="bar ${cardio >= s.cardioTarget ? "good" : ""}"><span style="width:${Math.min(100, cardio / s.cardioTarget * 100)}%"></span></div></button>
+  </div>
+  <button class="tile" data-tab="labs" style="margin-bottom:14px"><div class="label">Blood work</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    ${evals.length ? `${nBad ? `<span class="st bad"><i>!!</i>${nBad} need${nBad === 1 ? "s" : ""} attention</span>` : ""}
+      ${nWarn ? `<span class="st warn"><i>!</i>${nWarn} borderline</span>` : ""}
+      <span class="st good"><i>✓</i>${evals.filter(e => e.st === "good").length} normal</span>`
+      : `<span class="muted">No results yet — tap to add your baseline.</span>`}</div></button>
+  ${s.lastSync ? `<p class="faint" style="text-align:center">Last Apple Health sync: ${fmtDT(s.lastSync)}</p>` : ""}`;
+}
+
+// =====================================================================
+// Weight tab
+// =====================================================================
+function viewWeight() {
+  const s = db.settings, all = allWeights(), tw = trendWeights(), last = latest(), t = today();
+  const lost = last ? s.startWeight - last.w : null;
+  const thisW = weekSummary(tw, weekStart(t)), prevW = weekSummary(tw, addDays(weekStart(t), -7));
+  const wd = thisW.avg != null && prevW.avg != null ? thisW.avg - prevW.avg : null;
+  const comp = k => [...all].reverse().find(w => w[k] != null);
+  const bfE = comp("bf"), mmE = comp("muscle"), leanE = comp("lean"), bmiE = comp("bmi");
+  const bmi = bmiE ? bmiE.bmi : last ? bmiFor(last.w) : null;
+  // weekly summary rows: newest first, only weeks that have readings
+  const weeks = [];
+  if (tw.length) for (let w = weekStart(t); w >= weekStart(tw[0].date) && weeks.length < 8; w = addDays(w, -7)) {
+    const cur = weekSummary(tw, w); if (!cur.n) continue;
+    const prev = weekSummary(tw, addDays(w, -7));
+    weeks.push({ ...cur, chg: prev.avg != null ? cur.avg - prev.avg : null });
+  }
+  const goals = [...s.goals].sort((a, b) => b - a), finalG = goals[goals.length - 1];
+  const reachedOn = g => { const hit = tw.find(w => w.w <= g); return hit ? hit.date : null; };
+  const prog = g => !last ? 0 : Math.max(0, Math.min(100, (s.startWeight - last.w) / (s.startWeight - g) * 100));
+  return `
+  <div class="stats3">
+    <div class="tile"><div class="label">Lost</div><div class="value n down">${lost != null ? r1(lost) : "—"}<small>lb</small></div><div class="sub">since ${fmtD(s.startDate)}</div></div>
+    <div class="tile"><div class="label">Week avg</div><div class="value n">${r1(thisW.avg)}</div><div class="sub">${thisW.n} wake-up reading${thisW.n === 1 ? "" : "s"}</div></div>
+    <div class="tile"><div class="label">vs last wk</div><div class="value n ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${signed(wd)}</div><div class="sub">week avg change</div></div>
+  </div>
+  <div class="card">
+    <h2>Weight trend</h2>
+    <div class="seg">${[["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]].map(([k, l]) => `<button class="${wView === k ? "on" : ""}" data-act="wview" data-v="${k}">${l}</button>`).join("")}</div>
+    <div class="chart" id="wChart"></div>
+    <div class="legend">${wView === "daily"
+      ? `<span><i class="lg-dot"></i>Wake-up</span><span><i class="lg-ring"></i>Post-walk / other</span><span><i class="lg-line"></i>7-day average</span>`
+      : `<span><i class="lg-dot"></i>${wView === "weekly" ? "Weekly" : "Monthly"} avg (wake-up)</span><span><i class="lg-ring"></i>No wake-up readings</span><span><i class="lg-line"></i>Trend</span>`}
+      <span><i class="lg-goal"></i>Goals</span></div>
+    <p class="faint" style="margin:8px 0 0">${wView === "daily" ? "Last 30 days. " : ""}The trend uses wake-up readings only. Post-walk and other readings are shown but not averaged in.</p>
+  </div>
+  <div class="card"><h2>Weekly summary <small>Mon–Sun · wake-up readings</small></h2>
+    ${weeks.length ? `<table><thead><tr><th>Week of</th><th>Avg</th><th>Change</th><th>#</th></tr></thead><tbody>
+      ${weeks.map(w => `<tr><td>${fmtD(w.start)}${w.start === weekStart(t) ? ' <span class="tag red">Now</span>' : ""}</td><td class="v">${r1(w.avg)}</td>
+      <td class="v ${w.chg == null ? "" : w.chg <= 0 ? "down" : "up"}">${w.chg == null ? '<span class="faint">—</span>' : signed(w.chg)}</td><td class="faint">${w.n}</td></tr>`).join("")}</tbody></table>
+      <p class="faint" style="margin:8px 0 0">"Change" compares with the week before; blank when that week had no wake-up readings.</p>` : `<p class="faint">No wake-up readings yet.</p>`}
+  </div>
+  <div class="card"><h2>Goals <small>from ${r1(s.startWeight)} lb</small></h2>
+    ${goals.map((g, i) => {
+      const r = reachedOn(g), done = last && last.w <= g, p = prog(g);
+      return `<div class="milestone"><div><b class="n" style="font-size:24px">${g} lb</b> ${i === goals.length - 1 ? '<span class="tag">Maintenance</span>' : ""}
+        <div class="faint">${done ? `Reached ${fmtD(r)} 🎉` : r ? `First hit ${fmtD(r)} — keep it there` : last ? `${r1(last.w - g)} lb to go` : ""}</div></div>
+        <div>${done ? '<span class="tag good">✓ Done</span>' : `<span class="n" style="font-size:22px;font-weight:700">${Math.round(p)}%</span>`}</div>
+        <div class="bar ${done ? "good" : ""}"><span style="width:${p}%"></span></div></div>`; }).join("")}
+    ${last && last.w <= finalG + 2 ? `<p class="muted">Maintenance zone: keep your weekly average between <b>${finalG - 2}</b> and <b>${finalG + 2}</b> lb.</p>` : ""}
+  </div>
+  <div class="card"><h2>Body composition <small>latest</small></h2>
+    <div class="grid2" style="margin:0">
+      <div><div class="faint">Body fat</div><div class="n" style="font-size:28px;font-weight:800">${bfE ? r1(bfE.bf) + "%" : "—"}</div></div>
+      <div><div class="faint">Muscle mass</div><div class="n" style="font-size:28px;font-weight:800">${mmE ? r1(mmE.muscle) + " lb" : "—"}</div></div>
+      <div><div class="faint">Lean mass</div><div class="n" style="font-size:28px;font-weight:800">${leanE ? r1(leanE.lean) + " lb" : "—"}</div></div>
+      <div><div class="faint">BMI</div><div class="n" style="font-size:28px;font-weight:800">${r1(bmi)}</div></div>
+    </div>
+    ${all.filter(w => w.bf != null).length >= 2 ? `<h2 style="margin-top:18px">Body fat %</h2><div class="chart" id="bfChart"></div>` : ""}
+  </div>
+  <div class="card">
+    <details id="logWeight" ${db.weights.length ? "" : "open"}>
+      <summary>Log a weigh-in</summary>
+      <form data-form="weight">
+        <div class="row">
+          <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label>
+          <label>Weight (lb)<input type="number" name="w" step="0.1" inputmode="decimal" placeholder="209.8" required></label>
+        </div>
+        <label>When<select name="type"><option value="wake">Wake-up (used for trend)</option><option value="walk">Post-walk</option><option value="other">Other</option></select></label>
+        <div class="row">
+          <label>Body fat %<input type="number" name="bf" step="0.1" inputmode="decimal" placeholder="optional"></label>
+          <label>Muscle (lb)<input type="number" name="muscle" step="0.1" inputmode="decimal" placeholder="optional"></label>
+          <label>BMI<input type="number" name="bmi" step="0.1" inputmode="decimal" placeholder="${s.heightIn ? "auto" : "optional"}"></label>
+        </div>
+        <label>Note<input name="note" placeholder="optional, e.g. after cheat meal"></label>
+        <button class="btn block">Save weigh-in</button>
+        <p class="faint">One reading per day per type — saving again updates it.</p>
+      </form>
+    </details>
+  </div>
+  <div class="card">
+    <h2>All readings</h2>
+    ${all.length ? `<ul class="list">${[...all].reverse().slice(0, 40).map(w => `
+      <li><div class="grow"><div><b>${fmtDay(w.date)}</b> <span class="tag ${w.type === "wake" ? "red" : ""}">${TYPES[w.type] || w.type}</span> ${w.src === "health" ? '<span class="tag">Health</span>' : ""}</div>
+        <div class="faint">${[w.note ? esc(w.note) : "", w.bf != null ? r1(w.bf) + "% fat" : "", w.muscle != null ? r1(w.muscle) + " lb muscle" : "", w.lean != null ? r1(w.lean) + " lb lean" : "", w.bmi != null ? "BMI " + r1(w.bmi) : ""].filter(Boolean).join(" · ")}</div></div>
+        <span class="num">${r1(w.w)}</span><button class="x" data-act="del" data-k="weights" data-id="${w.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : `<p class="faint">No weigh-ins yet.</p>`}
+  </div>`;
+}
+function aggregate(keyFn, startFn) {
+  // groups readings by period; wake-up average if any, else average of all readings (drawn hollow)
+  const groups = {};
+  for (const w of allWeights()) (groups[keyFn(w.date)] = groups[keyFn(w.date)] || []).push(w);
+  return Object.keys(groups).sort().map(k => {
+    const g = groups[k], wake = g.filter(w => w.type === "wake");
+    const use = wake.length ? wake : g;
+    return { key: k, t: tms(startFn(k)), y: mean(use.map(w => w.w)), n: use.length, hollow: !wake.length };
+  });
+}
+function drawWeightCharts() {
+  const s = db.settings, goals = [...s.goals].sort((a, b) => b - a), last = latest();
+  const next = goals.find(g => !last || last.w > g);
+  const refs = goals.map((g, i) => ({ y: g, label: i === goals.length - 1 ? `${g} ★` : String(g), strong: g === next }));
+  const el = $("#wChart");
+  if (el) {
+    if (wView === "daily") {
+      const from = addDays(today(), -29), all = allWeights().filter(w => w.date >= from), wake = trendWeights();
+      const pts = all.map(w => ({ t: tms(w.date), y: w.w, hollow: w.type !== "wake",
+        tip: `<b>${fmtD(w.date)}</b> · ${r1(w.w)} lb<br>${TYPES[w.type]}${w.note ? " · " + esc(w.note) : ""}${w.type === "wake" ? `<br>7-day avg ${r1(avg7(wake, w.date))}` : ""}` }));
+      const line = wake.filter(w => w.date >= from).map(w => ({ t: tms(w.date), y: avg7(wake, w.date) }));
+      drawChart(el, { points: pts, line, refs, label: "Daily weigh-ins with 7-day average" });
+    } else if (wView === "weekly") {
+      const agg = aggregate(weekStart, k => k);
+      drawChart(el, { points: agg.map(a => ({ ...a, tip: `<b>Week of ${fmtD(a.key)}</b><br>avg ${r1(a.y)} lb · ${a.n} reading${a.n === 1 ? "" : "s"}${a.hollow ? "<br>(no wake-up readings)" : ""}` })),
+        line: agg.map(a => ({ t: a.t, y: a.y })), refs, label: "Weekly average weight" });
+    } else {
+      const agg = aggregate(d => d.slice(0, 7), k => k + "-01");
+      drawChart(el, { points: agg.map(a => ({ ...a, tip: `<b>${MON[+a.key.slice(5) - 1]} ${a.key.slice(0, 4)}</b><br>avg ${r1(a.y)} lb · ${a.n} reading${a.n === 1 ? "" : "s"}${a.hollow ? "<br>(no wake-up readings)" : ""}` })),
+        line: agg.map(a => ({ t: a.t, y: a.y })), refs, label: "Monthly average weight", xticks: agg.map(a => a.t), xfmt: d => MON[parseD(d).getMonth()] });
+    }
+  }
+  const bfel = $("#bfChart");
+  if (bfel) {
+    const bf = allWeights().filter(w => w.bf != null);
+    drawChart(bfel, { points: bf.map(w => ({ t: tms(w.date), y: w.bf, tip: `<b>${fmtD(w.date)}</b> · ${r1(w.bf)}%` })), line: bf.map(w => ({ t: tms(w.date), y: w.bf })), refs: [], height: 170, label: "Body fat percent" });
+  }
+}
+
+// =====================================================================
+// Fast & food tab
+// =====================================================================
+function viewFood() {
+  const s = db.settings, now = Date.now(), t = today();
+  const active = db.fasts.find(f => !f.end);
+  const done = db.fasts.filter(f => f.end).sort((a, b) => b.start.localeCompare(a.start));
+  let fastCard;
+  if (active) {
+    const el = now - new Date(active.start).getTime();
+    const pct = Math.min(100, el / (s.fastTarget * 36e5) * 100);
+    const goalAt = new Date(new Date(active.start).getTime() + s.fastTarget * 36e5);
+    fastCard = `<div class="card hero"><h2>Fasting now <small>goal ${s.fastTarget}h</small></h2>
+      <div class="big">${fmtDur(el)}</div>
+      <div class="faint" style="margin-bottom:12px">Started ${fmtDT(active.start)} · ${pct >= 100 ? "goal reached 🔥" : "goal at " + fmtTime(goalAt.toISOString())}</div>
+      <div class="bar ${pct >= 100 ? "good" : ""}" style="margin-bottom:16px"><span style="width:${pct}%"></span></div>
+      <div class="btn-row"><button class="btn" data-act="endFast" style="flex:1">End fast</button><button class="btn ghost" data-act="cancelFast">Cancel</button></div>
+      <details style="margin-top:14px"><summary>Ended at a different time?</summary>
+        <form data-form="endFastAt"><label>Fast ended at<input type="datetime-local" name="end" value="${localInput(new Date())}" required></label><button class="btn secondary block">End fast at this time</button></form>
+      </details></div>`;
+  } else {
+    const lastEnd = done[0] ? done[0].end : null;
+    fastCard = `<div class="card"><h2>Fasting window <small>goal ${s.fastTarget}h</small></h2>
+      <p class="muted" style="margin-top:0">${lastEnd ? `Eating window open since ${fmtDT(lastEnd)} (${fmtDur(now - new Date(lastEnd).getTime())}).` : "Not fasting right now."}</p>
+      <button class="btn block" data-act="startFast">Start fast now</button>
+      <details style="margin-top:14px"><summary>Started earlier, or log a past fast</summary>
+        <form data-form="fast">
+          <label>Fast started<input type="datetime-local" name="start" value="${localInput(new Date(now - 2 * 36e5))}" required></label>
+          <label>Fast ended (leave empty if still fasting)<input type="datetime-local" name="end"></label>
+          <button class="btn secondary block">Save fast</button>
+        </form></details></div>`;
+  }
+  const recentFasts = done.slice(0, 7);
+  const avgFast = recentFasts.length ? recentFasts.reduce((a, f) => a + (new Date(f.end) - new Date(f.start)), 0) / recentFasts.length : null;
+  const upcoming = db.cheats.filter(c => !c.done).sort((a, b) => a.date.localeCompare(b.date));
+  const pastCheats = db.cheats.filter(c => c.done).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const meals = [...db.meals].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const recentMeals = meals.filter(m => m.date >= addDays(t, -6));
+  const byDay = {};
+  recentMeals.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
+  const nowT = new Date(), hm = `${pad(nowT.getHours())}:${pad(nowT.getMinutes())}`;
+  return `${fastCard}
+  <div class="card"><h2>Recent fasts <small>${avgFast ? "avg " + fmtDur(avgFast) : ""}</small></h2>
+    ${recentFasts.length ? `<ul class="list">${recentFasts.map(f => {
+      const dur = new Date(f.end) - new Date(f.start), hit = dur >= s.fastTarget * 36e5;
+      return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
+      <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}<button class="x" data-act="del" data-k="fasts" data-id="${f.id}" aria-label="Delete">×</button></li>`; }).join("")}</ul>`
+      : `<p class="faint">Completed fasts show up here.</p>`}
+  </div>
+  <div class="card"><h2>Meals</h2>
+    <details ${meals.length ? "" : "open"}><summary>Log a meal</summary>
+      <form data-form="meal">
+        <div class="row"><label>Date<input type="date" name="date" value="${t}" required></label><label>Time<input type="time" name="time" value="${hm}" required></label></div>
+        <label>What did you eat?<textarea name="text" rows="2" placeholder="e.g. Grilled chicken, rice, salad" required></textarea></label>
+        <label class="check"><input type="checkbox" name="cheat">This was a cheat meal</label>
+        <button class="btn block" style="margin-top:10px">Save meal</button>
+      </form></details>
+    ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => `<p class="faint" style="margin:16px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${fmtDay(d)}</p><ul class="list">${ms.map(m =>
+      `<li><span class="faint" style="width:66px;flex:none">${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}</div><button class="x" data-act="del" data-k="meals" data-id="${m.id}" aria-label="Delete">×</button></li>`).join("")}</ul>`).join("")
+      : `<p class="faint">No meals logged in the last 7 days.</p>`}
+  </div>
+  <div class="card"><h2>Cheat meal planner</h2>
+    <p class="faint" style="margin-top:0">Plan them ahead so they're a choice, not a slip.</p>
+    ${upcoming.length ? `<ul class="list">${upcoming.map(c => `<li><div class="grow"><div><b>${fmtDay(c.date)}</b> ${c.date < t ? '<span class="tag red">overdue</span>' : ""}</div><div class="muted">${esc(c.text)}</div></div>
+      <button class="btn secondary small" data-act="cheatDone" data-id="${c.id}">Had it</button><button class="x" data-act="del" data-k="cheats" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : `<p class="faint">No cheat meals planned.</p>`}
+    <details style="margin-top:12px"><summary>Plan a cheat meal</summary>
+      <form data-form="cheat">
+        <label>Day<input type="date" name="date" value="${addDays(t, (6 - parseD(t).getDay() + 7) % 7 || 7)}" required></label>
+        <label>What's the plan?<input type="text" name="text" placeholder="e.g. Pizza night with family" required></label>
+        <button class="btn block">Add to plan</button>
+      </form></details>
+    ${pastCheats.length ? `<p class="faint" style="margin:16px 0 2px;font-weight:700">Recently enjoyed</p><ul class="list">${pastCheats.map(c => `<li><div class="grow">${fmtD(c.date)} · ${esc(c.text)}</div><button class="x" data-act="del" data-k="cheats" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+  </div>`;
+}
+
+// =====================================================================
+// Fitness tab
+// =====================================================================
+function viewFitness() {
+  const s = db.settings, t = today(), ws = weekStart(t);
+  const thisWeek = db.cardio.filter(c => c.date >= ws).sort((a, b) => b.date.localeCompare(a.date));
+  const mins = thisWeek.reduce((a, c) => a + c.min, 0);
+  const pct = Math.min(100, mins / s.cardioTarget * 100);
+  const weeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const start = addDays(ws, -7 * i), end = addDays(start, 6);
+    weeks.push({ start, m: db.cardio.filter(c => c.date >= start && c.date <= end).reduce((a, c) => a + c.min, 0) });
+  }
+  const maxM = Math.max(s.cardioTarget * 1.2, ...weeks.map(w => w.m));
+  const planks = [...db.planks].sort((a, b) => b.date.localeCompare(a.date));
+  const bestPlank = planks.reduce((a, p) => Math.max(a, p.sec), 0);
+  const pushups = [...db.pushups].sort((a, b) => b.date.localeCompare(a.date));
+  const bestPush = pushups.reduce((a, p) => Math.max(a, p.reps), 0);
+  const fmtSec = x => x >= 60 ? `${Math.floor(x / 60)}:${pad(x % 60)}` : `${x}s`;
+  return `
+  <div class="card hero"><h2>Cardio this week <small>Mon–Sun</small></h2>
+    <div class="big">${mins}<small> / ${s.cardioTarget} min</small></div>
+    <div class="faint" style="margin-bottom:12px">${mins >= s.cardioTarget ? "Weekly target hit 🔥" : `${s.cardioTarget - mins} min to go`}</div>
+    <div class="bar ${mins >= s.cardioTarget ? "good" : ""}"><span style="width:${pct}%"></span></div>
+    <form data-form="cardio" id="cardioForm" style="margin-top:18px">
+      <div class="row">
+        <label>Activity<select name="type"><option>Incline walk</option><option>Peloton ride</option><option>Other cardio</option></select></label>
+        <label>Minutes<input type="number" name="min" min="1" max="600" inputmode="numeric" placeholder="30" required></label>
+      </div>
+      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label>
+      <button class="btn block">Add session</button>
+    </form>
+    ${thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(c => `<li><div class="grow">${esc(c.type)}<div class="faint">${fmtDay(c.date)}</div></div><span class="num">${c.min} min</span><button class="x" data-act="del" data-k="cardio" data-id="${c.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+  </div>
+  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>
+    <div class="weeks"><div class="target-line" style="bottom:${s.cardioTarget / maxM * 100}%"></div>
+      ${weeks.map(w => `<div class="wk ${w.m >= s.cardioTarget ? "hit" : ""}" style="height:${w.m / maxM * 100}%" title="${w.m} min"></div>`).join("")}</div>
+    <div class="weeks-labels">${weeks.map(w => `<span>${w.m}<br>${fmtD(w.start)}</span>`).join("")}</div>
+  </div>
+  <div class="card"><h2>Plank holds <small>goal ${fmtSec(s.plankGoal)}</small></h2>
+    <div class="banner warn" style="margin-bottom:12px">Planks put weight through your shoulders — confirm with your PT before starting these.</div>
+    <div class="muted">Best hold: <b class="n" style="font-size:22px">${bestPlank ? fmtSec(bestPlank) : "—"}</b></div>
+    <div class="bar ${bestPlank >= s.plankGoal ? "good" : ""}" style="margin:8px 0 16px"><span style="width:${Math.min(100, bestPlank / s.plankGoal * 100)}%"></span></div>
+    <form data-form="plank"><div class="row">
+      <label>Seconds held<input type="number" name="sec" min="1" max="3600" inputmode="numeric" placeholder="45" required></label>
+      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label></div>
+      <button class="btn block">Log plank</button></form>
+    ${planks.length ? `<ul class="list" style="margin-top:10px">${planks.slice(0, 5).map(p => `<li><div class="grow">${fmtDay(p.date)}</div><span class="num">${fmtSec(p.sec)}</span><button class="x" data-act="del" data-k="planks" data-id="${p.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+  </div>
+  ${s.shouldersCleared ? `
+  <div class="card"><h2>Push-ups <small>goal ${s.pushupGoal} in a set</small></h2>
+    <p class="faint" style="margin-top:0">Cleared by PT${s.clearedDate ? " on " + fmtD(s.clearedDate) : ""}. Ease in and stop if anything pinches.</p>
+    <div class="muted">Best set: <b class="n" style="font-size:22px">${bestPush || "—"}</b></div>
+    <div class="bar ${bestPush >= s.pushupGoal ? "good" : ""}" style="margin:8px 0 16px"><span style="width:${Math.min(100, bestPush / s.pushupGoal * 100)}%"></span></div>
+    <form data-form="pushup"><div class="row">
+      <label>Reps in one set<input type="number" name="reps" min="1" max="500" inputmode="numeric" placeholder="10" required></label>
+      <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label></div>
+      <button class="btn block">Log push-ups</button></form>
+    ${pushups.length ? `<ul class="list" style="margin-top:10px">${pushups.slice(0, 5).map(p => `<li><div class="grow">${fmtDay(p.date)}</div><span class="num">${p.reps} reps</span><button class="x" data-act="del" data-k="pushups" data-id="${p.id}" aria-label="Delete">×</button></li>`).join("")}</ul>` : ""}
+  </div>` : `
+  <div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">Upper-body goals locked</h2>
+    <p class="muted">Push-ups unlock once your physical therapist clears your shoulders. Until then, cardio is the focus.</p>
+    <button class="btn secondary" data-act="clearShoulders">My PT cleared me</button></div>`}`;
+}
+
+// =====================================================================
+// Labs tab
+// =====================================================================
+const DISCLAIMER = `<div class="banner"><b>General information, not medical advice.</b> Ranges and explanations come from public health sources and are meant to help you understand your report. They can't account for your full health picture — always review results with your doctor.</div>`;
+function viewLabs() {
+  const g = labGroups();
+  const rows = Object.entries(g).map(([k, arr]) => ({ k, arr, last: arr[arr.length - 1], e: evalLab(arr[arr.length - 1]) }))
+    .sort((a, b) => ORDER[a.e.st] - ORDER[b.e.st] || a.last.name.localeCompare(b.last.name));
+  const cnt = st => rows.filter(r => r.e.st === st).length;
+  const dates = [...new Set(db.labs.map(l => l.date))].sort();
+  const usedSrc = [...new Set(TESTS.flatMap(t => t.src))];
+  return `${DISCLAIMER}
+  ${rows.length ? `<div class="counts"><div class="good"><b>${cnt("good")}</b><span>Normal</span></div><div class="warn"><b>${cnt("warn")}</b><span>Borderline</span></div><div class="bad"><b>${cnt("bad")}</b><span>Attention</span></div></div>` : ""}
+  <div class="card"><h2>Your results <small>${rows.length ? "tap for details" : ""}</small></h2>
+    ${rows.length ? rows.map(r => {
+      const prev = r.arr.length > 1 ? num(r.arr[r.arr.length - 2].value) : null;
+      const delta = prev != null && r.e.v != null ? r.e.v - prev : null;
+      return `<button class="lab-row" data-act="openLab" data-k="${esc(r.k)}"><span class="dot ${r.e.st}"></span>
+        <div style="flex:1;min-width:0"><div class="nm">${esc(r.e.t ? r.e.t.name : r.last.name)}</div>
+          <div style="margin-top:5px">${stChip(r.e)}</div>
+          <div class="faint" style="margin-top:4px">${fmtDY(r.last.date)}${r.arr.length > 1 ? ` · ${r.arr.length} results${delta != null ? ` · ${delta > 0 ? "▲" : delta < 0 ? "▼" : "="} ${Math.abs(Math.round(delta * 100) / 100)} since last` : ""}` : ""}</div></div>
+        <div class="val">${esc(r.last.value)}<small>${esc(r.last.unit)}</small></div><span class="chev">›</span></button>`; }).join("")
+      : `<p class="faint">No results yet. Add your first set below — it becomes your baseline.</p>`}
+  </div>
+  <div class="card">
+    <details id="labForm" ${rows.length ? "" : "open"}><summary>Add a lab result</summary>
+    <form data-form="lab">
+      <label>Test name<input name="name" list="labList" placeholder="Start typing, e.g. LDL" required autocomplete="off"></label>
+      <datalist id="labList">${TESTS.map(t => `<option value="${esc(t.name)}">`).join("")}</datalist>
+      <div class="row">
+        <label>Result<input name="value" inputmode="decimal" placeholder="e.g. 112" required></label>
+        <label>Unit<input name="unit" placeholder="mg/dL"></label>
+      </div>
+      <div class="row">
+        <label>Date drawn<input type="date" name="date" value="${dates.length ? dates[dates.length - 1] : today()}" max="${today()}" required></label>
+        <label>Lab's reference range<input name="range" placeholder="if listed, e.g. 0-99"></label>
+      </div>
+      <p class="faint" style="margin-top:-4px">Copy the range exactly as printed (like <b>70-99</b>, <b>&lt;100</b> or <b>&gt;39</b>). When you enter it, it's used instead of the general range.</p>
+      <button class="btn block">Save result</button>
+    </form></details>
+  </div>
+  ${dates.length ? `<div class="card"><details><summary>All results by date</summary>
+    ${[...dates].reverse().map(d => `<p class="faint" style="margin:14px 0 4px;font-weight:700">${fmtDY(d)}${d === dates[0] ? ' <span class="tag">Baseline</span>' : ""}</p>
+      <table><tbody>${db.labs.filter(l => l.date === d).sort((a, b) => a.name.localeCompare(b.name)).map(l => { const e = evalLab(l);
+        return `<tr><td>${esc(l.name)}<div style="margin-top:3px">${stChip(e)}</div></td><td class="v">${esc(l.value)} <span class="faint" style="font-family:Barlow;font-size:12px">${esc(l.unit)}</span></td><td style="text-align:right"><button class="x" data-act="del" data-k="labs" data-id="${l.id}" aria-label="Delete">×</button></td></tr>`; }).join("")}</tbody></table>`).join("")}
+  </details></div>` : ""}
+  <div class="card"><details><summary>How results are rated</summary>
+    <p class="muted" style="margin-top:0">1. <b>Your lab's range wins.</b> If you enter it, results inside it are <span style="color:var(--good)">green</span>; up to 10% past the edge is <span style="color:var(--warn)">yellow</span>; further out is <span style="color:var(--bad)">red</span>.</p>
+    <p class="muted">2. <b>Otherwise, guideline ranges</b> from the CDC, NIH, AHA, ADA and AUA are used for tests that have them (cholesterol, triglycerides, glucose, A1c, hs-CRP, vitamin D, testosterone, eGFR). Their own categories decide the color — e.g. LDL 130–159 "borderline high" is yellow.</p>
+    <p class="muted">3. <b>Lab-dependent tests</b> (liver enzymes, creatinine, BUN, TSH, blood count, electrolytes, ferritin, uric acid) use a typical adult-male range and are labeled "typical" — these vary between labs, so entering your lab's range is best.</p>
+    <p class="muted">4. If the unit you enter doesn't match (e.g. mmol/L for cholesterol), the general range isn't applied — enter your lab's range instead.</p>
+  </details></div>
+  <div class="card"><details><summary>Glossary of common terms</summary>
+    <dl class="gloss">${GLOSSARY.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("")}</dl>
+  </details></div>
+  <div class="card"><details><summary>Where the ranges come from</summary>
+    <ul class="src" style="padding-left:18px;margin:0">${usedSrc.map(k => `<li><a href="${S[k][1]}" target="_blank" rel="noopener">${esc(S[k][0])}</a></li>`).join("")}</ul>
+  </details></div>`;
+}
+function labSheet(k) {
+  const arr = labGroups()[k]; if (!arr) return "";
+  const last = arr[arr.length - 1], e = evalLab(last), t = e.t;
+  let basis;
+  if (e.basis === "lab") basis = `Rated against <b>your lab's range (${esc(fmtRange(e.lab))} ${esc(last.unit)})</b>.`;
+  else if (e.basis === "guide") basis = `Rated against the <b>general adult guideline</b> below.`;
+  else if (e.basis === "typical") basis = `Rated against a <b>typical adult range (${t.typ[0]}–${t.typ[1]} ${esc(t.unit)})</b>. Labs vary — add your lab's range for the most accurate rating.`;
+  else basis = t && t.note ? esc(t.note) : `No range to compare with yet. Add your lab's reference range to this result.`;
+  const bands = t && t.bands ? `<h4>General adult guideline (${esc(t.unit)})</h4><table class="bands"><tbody>${t.bands.map(b =>
+    `<tr class="${e.basis === "guide" && e.band === b ? "me" : ""}"><td>${esc(b[3])}</td><td>${stChip({ st: b[1], label: b[2] })}</td></tr>`).join("")}</tbody></table>
+    ${e.basis === "lab" ? `<p class="faint" style="margin-top:6px">Your lab's range takes priority; this is shown for comparison.</p>` : ""}` : "";
+  return `<div class="grab"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div><div class="faint" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700;font-size:12px">${esc(t ? t.panel : "Lab result")}</div><h3>${esc(t ? t.name : last.name)}</h3></div>
+      <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 6px"><span class="big">${esc(last.value)}</span><span class="muted">${esc(last.unit)}</span></div>
+    <div>${stChip(e)} <span class="faint">· ${fmtDY(last.date)}</span></div>
+    <p class="muted" style="margin-top:10px">${basis}</p>
+    ${bands}
+    ${arr.length >= 2 ? `<h4>Your results over time</h4><div class="chart" id="labChart"></div>` : ""}
+    <table style="margin-top:6px"><tbody>${[...arr].reverse().map(l => { const le = evalLab(l);
+      return `<tr><td>${fmtDY(l.date)}${l === arr[0] && arr.length > 1 ? ' <span class="tag">Baseline</span>' : ""}</td><td class="v">${esc(l.value)}</td><td>${stChip(le)}</td><td class="faint">${l.range ? "lab: " + esc(l.range) : ""}</td></tr>`; }).join("")}</tbody></table>
+    ${t ? `<h4>What it measures</h4><p>${esc(t.what)}</p>
+      <h4>If it's high</h4><p>${esc(t.high)}</p>
+      <h4>If it's low</h4><p>${esc(t.low)}</p>
+      <h4>Commonly recommended habits</h4><ul class="tips">${t.tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+      <h4>Sources</h4><ul class="src" style="padding-left:18px;margin:0">${t.src.map(k => `<li><a href="${S[k][1]}" target="_blank" rel="noopener">${esc(S[k][0])}</a></li>`).join("")}</ul>`
+      : `<p class="faint" style="margin-top:14px">This test isn't in the built-in library yet, so there's no explainer. Try <a href="${S.medLabs[1]}" target="_blank" rel="noopener">MedlinePlus Lab Tests</a>.</p>`}
+    <div style="margin-top:18px">${DISCLAIMER}</div>`;
+}
+function renderSheet() {
+  const sh = $("#sheet"), bg = $("#sheetBg");
+  const html = openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  sh.innerHTML = html;
+  sh.classList.add("open"); bg.classList.add("open");
+  const ch = $("#labChart", sh);
+  if (ch) {
+    const arr = labGroups()[openLab].filter(l => num(l.value) != null);
+    const e = evalLab(arr[arr.length - 1]);
+    const r = e.lab || (e.t && e.t.typ ? { lo: e.t.typ[0], hi: e.t.typ[1] } : null);
+    const refs = r ? [r.lo, r.hi].filter(v => v != null).map(v => ({ y: v, label: String(v) })) : [];
+    requestAnimationFrame(() => drawChart(ch, { points: arr.map(l => ({ t: tms(l.date), y: num(l.value), tip: `<b>${fmtDY(l.date)}</b> · ${esc(l.value)} ${esc(l.unit)}` })),
+      line: arr.map(l => ({ t: tms(l.date), y: num(l.value) })), refs, height: 180, label: "Results over time", xfmt: d => fmtDY(d) }));
+  }
+}
+
+// =====================================================================
+// Settings
+// =====================================================================
+function viewSettings() {
+  const s = db.settings;
+  const appUrl = location.origin + location.pathname;
+  const ft = s.heightIn ? Math.floor(s.heightIn / 12) : "", inch = s.heightIn ? Math.round(s.heightIn % 12) : "";
+  const backupAge = s.lastBackup ? Math.floor((Date.now() - new Date(s.lastBackup)) / 864e5) : null;
+  return `
+  ${navigator.standalone ? `<div class="banner warn"><b>Heads up:</b> you opened the home-screen web-app version. iPhone keeps its data separate from Safari's, and the Apple Health Shortcut opens Safari. Use the Shortcut as your home-screen icon instead (see the setup guide).</div>` : ""}
+  <div class="card"><h2>Apple Health sync</h2>
+    <p class="muted" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
+    <code class="url">${esc(appUrl)}?w=…&amp;bf=…&amp;bmi=…&amp;lean=…&amp;d=…</code>
+    <div class="btn-row"><button class="btn secondary small" data-act="copyUrl">Copy app address</button>
+    <button class="btn ghost small" data-act="testSync">Test with sample data</button></div>
+    <p class="faint">${s.lastSync ? "Last sync: " + fmtDT(s.lastSync) : "No syncs yet."}</p>
+  </div>
+  <div class="card"><h2>Profile & goals</h2>
+    <form data-form="settings">
+      <div class="row">
+        <label>Starting weight (lb)<input type="number" name="startWeight" step="0.1" value="${s.startWeight ?? ""}" inputmode="decimal"></label>
+        <label>Start date<input type="date" name="startDate" value="${s.startDate || ""}"></label>
+      </div>
+      <div class="row">
+        <label>Height (ft)<input type="number" name="ft" min="3" max="8" value="${ft}" inputmode="numeric" placeholder="5"></label>
+        <label>Height (in)<input type="number" name="in" min="0" max="11" value="${inch}" inputmode="numeric" placeholder="10"></label>
+      </div>
+      <label>Weight goals (lb, comma separated — the lowest is maintenance)<input name="goals" value="${s.goals.join(", ")}"></label>
+      <div class="row">
+        <label>Cardio min / week<input type="number" name="cardioTarget" min="10" value="${s.cardioTarget}" inputmode="numeric"></label>
+        <label>Fast goal (hours)<input type="number" name="fastTarget" min="8" max="72" value="${s.fastTarget}" inputmode="numeric"></label>
+      </div>
+      <div class="row">
+        <label>Plank goal (sec)<input type="number" name="plankGoal" min="10" value="${s.plankGoal}" inputmode="numeric"></label>
+        <label>Push-up goal (reps)<input type="number" name="pushupGoal" min="1" value="${s.pushupGoal}" inputmode="numeric"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>PT has cleared my shoulders for upper-body work</label>
+      <button class="btn block" style="margin-top:12px">Save settings</button>
+    </form>
+  </div>
+  <div class="card"><h2>Backup</h2>
+    <p class="muted" style="margin-top:0">Your data lives only on this phone, in Safari. Save a backup file now and then (to Files or iCloud Drive) so you never lose it.</p>
+    ${backupAge == null || backupAge > 14 ? `<div class="banner warn">${backupAge == null ? "You haven't made a backup yet." : `Last backup was ${backupAge} days ago.`}</div>` : `<p class="faint">Last backup ${backupAge === 0 ? "today" : backupAge + " days ago"}.</p>`}
+    <div class="btn-row"><button class="btn" data-act="export">Save backup</button>
+    <label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">Restore<input type="file" accept=".json,application/json" data-act="import" style="display:none"></label></div>
+  </div>
+  <div class="card"><h2>Danger zone</h2>
+    <button class="btn danger" data-act="wipe">Erase all data on this device</button></div>
+  <p class="faint" style="text-align:center"><a href="#" data-tab="home">← Back to dashboard</a></p>`;
+}
+
+// =====================================================================
+// Actions
+// =====================================================================
+const forms = {
+  weight(f) {
+    const w = num(f.get("w")); if (w == null) return;
+    const e = { date: f.get("date"), type: f.get("type") || "wake", w, bf: num(f.get("bf")), muscle: num(f.get("muscle")), bmi: num(f.get("bmi")), note: f.get("note").trim(), src: "manual" };
+    if (e.bmi == null && bmiFor(w) != null) e.bmi = Math.round(bmiFor(w) * 10) / 10;
+    upsertWeight(e); toast("Weigh-in saved");
+  },
+  meal(f) { db.meals.push({ id: uid(), date: f.get("date"), time: f.get("time"), text: f.get("text").trim(), cheat: !!f.get("cheat") }); save(); toast("Meal saved"); },
+  cheat(f) { db.cheats.push({ id: uid(), date: f.get("date"), text: f.get("text").trim(), done: false }); save(); toast("Cheat meal planned"); },
+  fast(f) {
+    const start = new Date(f.get("start")), endV = f.get("end");
+    const end = endV ? new Date(endV) : null;
+    if (end && end <= start) return alert("The end time needs to be after the start time.");
+    if (!end && db.fasts.some(x => !x.end)) return alert("You already have a fast running.");
+    db.fasts.push({ id: uid(), start: start.toISOString(), end: end ? end.toISOString() : null }); save(); toast(end ? "Fast logged" : "Fast started");
+  },
+  endFastAt(f) {
+    const a = db.fasts.find(x => !x.end), end = new Date(f.get("end"));
+    if (!a) return; if (end <= new Date(a.start)) return alert("The end time needs to be after the start time.");
+    a.end = end.toISOString(); save(); toast("Fast ended: " + fmtDur(end - new Date(a.start)));
+  },
+  cardio(f) { db.cardio.push({ id: uid(), date: f.get("date"), type: f.get("type"), min: Math.round(num(f.get("min"))) }); save(); toast("Session added"); },
+  plank(f) { db.planks.push({ id: uid(), date: f.get("date"), sec: Math.round(num(f.get("sec"))) }); save(); toast("Plank logged"); },
+  pushup(f) { db.pushups.push({ id: uid(), date: f.get("date"), reps: Math.round(num(f.get("reps"))) }); save(); toast("Push-ups logged"); },
+  lab(f) {
+    const name = f.get("name").trim(), t = findTest(name);
+    const l = { id: uid(), date: f.get("date"), name: t ? t.name : name, value: f.get("value").trim(), unit: f.get("unit").trim() || (t ? t.unit : ""), range: f.get("range").trim() };
+    db.labs.push(l); save();
+    toast(`${l.name} saved — ${evalLab(l).label}`);
+  },
+  settings(f) {
+    const s = db.settings, ft = num(f.get("ft")), inch = num(f.get("in"));
+    s.heightIn = ft ? ft * 12 + (inch || 0) : null;
+    s.startWeight = num(f.get("startWeight")) || s.startWeight;
+    s.startDate = f.get("startDate") || s.startDate;
+    const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50);
+    if (goals.length) s.goals = [...new Set(goals)].sort((a, b) => b - a);
+    for (const k of ["cardioTarget", "fastTarget", "plankGoal", "pushupGoal"]) { const v = num(f.get(k)); if (v) s[k] = v; }
+    const cleared = !!f.get("shouldersCleared");
+    if (cleared && !s.shouldersCleared) s.clearedDate = today();
+    s.shouldersCleared = cleared;
+    save(); toast("Settings saved");
+  }
+};
+document.addEventListener("submit", e => {
+  const form = e.target.closest("form[data-form]"); if (!form) return;
+  e.preventDefault();
+  forms[form.dataset.form](new FormData(form));
+  render();
+});
+document.addEventListener("input", e => {
+  if (e.target.name === "name" && e.target.closest("form[data-form=lab]")) {
+    const t = findTest(e.target.value), u = e.target.form.elements.unit;
+    if (t && !u.value) u.value = t.unit;
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.dataset.act !== "import") return;
+  const file = e.target.files[0]; if (!file) return;
+  file.text().then(txt => {
+    const data = JSON.parse(txt);
+    if (!data || !Array.isArray(data.weights)) throw new Error("not a Health Tracker backup");
+    if (!confirm("Replace everything on this device with the backup file?")) return;
+    localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); render(); toast("Backup restored");
+  }).catch(err => alert("Couldn't read that file: " + err.message));
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && openLab) { openLab = null; renderSheet(); } });
+document.addEventListener("click", e => {
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn) { e.preventDefault(); openLab = null; go(tabBtn.dataset.tab); return; }
+  const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
+  const act = el.dataset.act;
+  if (act === "settings") { e.preventDefault(); openLab = null; go(current === "settings" ? "home" : "settings"); return; }
+  if (act === "quick") { go(el.dataset.go, el.dataset.focus); return; }
+  if (act === "wview") { wView = el.dataset.v; render(); return; }
+  if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
+  if (act === "closeSheet") { openLab = null; renderSheet(); return; }
+  if (act === "del") {
+    if (!confirm("Delete this entry?")) return;
+    db[el.dataset.k] = db[el.dataset.k].filter(x => String(x.id) !== el.dataset.id); save(); render(); return;
+  }
+  if (act === "startFast") { db.fasts.push({ id: uid(), start: new Date().toISOString(), end: null }); save(); toast("Fast started — you've got this"); render(); return; }
+  if (act === "endFast") { const a = db.fasts.find(x => !x.end); if (a) { a.end = new Date().toISOString(); save(); toast("Fast ended: " + fmtDur(new Date(a.end) - new Date(a.start))); } render(); return; }
+  if (act === "cancelFast") { if (confirm("Cancel this fast without saving it?")) { db.fasts = db.fasts.filter(x => x.end); save(); render(); } return; }
+  if (act === "cheatDone") {
+    const c = db.cheats.find(x => x.id === el.dataset.id);
+    if (c) { c.done = true; db.meals.push({ id: uid(), date: c.date > today() ? today() : c.date, time: "19:00", text: c.text, cheat: true }); save(); toast("Enjoyed! Logged as a cheat meal"); }
+    render(); return;
+  }
+  if (act === "clearShoulders") {
+    if (confirm("Has your physical therapist cleared you for push-ups and upper-body work?")) { db.settings.shouldersCleared = true; db.settings.clearedDate = today(); save(); toast("Upper-body goals unlocked 💪"); render(); }
+    return;
+  }
+  if (act === "copyUrl") {
+    const u = location.origin + location.pathname;
+    (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast("Copied: " + u), () => prompt("Copy this address:", u));
+    return;
+  }
+  if (act === "testSync") { location.href = location.pathname + "?w=208.6&bf=24.1&bmi=29.1&lean=158.3&d=" + today(); return; }
+  if (act === "export") {
+    db.settings.lastBackup = new Date().toISOString(); save();
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `health-tracker-backup-${today()}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    render(); return;
+  }
+  if (act === "wipe") {
+    if (confirm("Erase ALL your data on this device? This can't be undone.") && confirm("Really erase everything?")) {
+      localStorage.removeItem(KEY); db = load(); db.weights = []; save(); render(); toast("All data erased");
+    }
+  }
+});
+
+// keep timers fresh; redraw charts on rotation
+const busy = () => document.activeElement && document.activeElement.closest("form");
+setInterval(() => { if ((current === "food" || current === "home") && db.fasts.some(f => !f.end) && !busy() && !openLab) render(); }, 30000);
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (current === "weight") drawWeightCharts(); if (openLab) renderSheet(); }, 150); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !busy()) render(); });
+
+handleSyncLink();
+render();
+</script>
+</body>
+</html>
