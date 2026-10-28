@@ -38,6 +38,13 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
+body.setup nav.tabs, body.setup header.top .icon-btn { display: none; }
+.streak { display: flex; align-items: center; gap: 14px; }
+.streak svg { width: 44px; height: 44px; flex: none; }
+.streak .v { font-family: var(--num); font-size: 40px; font-weight: 800; line-height: 1; }
+.mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 10px; }
+.mgrid .n { font-size: 24px; font-weight: 800; line-height: 1.1; }
+.mgrid .faint { font-size: 12px; }
 body {
   background: var(--bg); color: var(--ink);
   font: 16px/1.45 "Barlow", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
@@ -258,10 +265,10 @@ nav.tabs button.on svg { color: var(--accent); }
 const KEY = "healthTracker.v1";
 const AREAS = { core: "Core", lower: "Lower body", upper: "Upper body" };
 const DEFAULTS = {
-  v: 4,
+  v: 5,
   settings: {
-    heightIn: null, startWeight: 220, startDate: "2026-08-18", goals: [207, 205, 197],
-    cardioTarget: 300, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
+    name: "", setupDone: false, heightIn: null, startWeight: null, startDate: null, goals: [],
+    cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
     // suggestions shown when logging; names you type in get added
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
@@ -270,9 +277,10 @@ const DEFAULTS = {
     },
     // exercise goals: {id, area, ex, sets, reps, sec, weight}
     liftGoals: [],
-    shouldersCleared: false, clearedDate: null, lastBackup: null, lastSync: null
+    shouldersCleared: true, clearedDate: null, lastBackup: null, lastSync: null
   },
   weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: [],
+  body: [],    // scale-only measurements (e.g. Renpho): {id, date, muscle, skeletal, ffm, visceral, subq, water, protein, bone, metage}
   foods: [],   // food table: {id, name, serving, amt, unit, cal, protein, aliases, src}
   presets: []  // My Foods: {id, name, items:[{foodId, name, servings, cal, protein}]}
 };
@@ -326,16 +334,6 @@ const FOOD_TABLE = [
   ["Black coffee", "1 cup", 1, "cup", 2, 0, ["coffee"]]
 ];
 const LEGACY = ["planks", "pushups"]; // v2 collections, folded into core/strength by migrate()
-// Readings you gave me to start with (lbs). Added once; never overwrite an existing reading.
-const BACKFILL = [
-  ["2026-08-18", 220.0, "other", "Starting weight, doctor's office"],
-  ["2026-10-09", 215.6, "walk", ""],
-  ["2026-10-16", 213.8, "wake", ""],
-  ["2026-10-23", 211.6, "wake", ""],
-  ["2026-10-25", 213.8, "wake", ""],
-  ["2026-10-26", 209.8, "wake", ""],
-  ["2026-10-27", 209.8, "wake", ""]
-];
 const TYPES = { wake: "Wake-up", walk: "Post-walk", other: "Other" };
 
 function load() {
@@ -346,15 +344,15 @@ function load() {
     for (const k of Object.keys(DEFAULTS).concat(LEGACY)) if ((Array.isArray(DEFAULTS[k]) || LEGACY.includes(k)) && Array.isArray(saved[k])) db[k] = saved[k];
     Object.assign(db.settings, saved.settings || {});
     db.v = saved.v || 1;
-  } else db.v = 1;
-  return migrate(db);
+    // one-time safety copy of the data exactly as it was before this version upgraded it
+    if (db.v < DEFAULTS.v) try { localStorage.setItem(`${KEY}.before-v${DEFAULTS.v}`, JSON.stringify(saved)); } catch (e) {}
+  } else db.v = 3; // brand-new: nothing to migrate from older versions
+  return migrate(db, !!saved);
 }
-function migrate(db) {
+function migrate(db, hadSaved) {
   if (db.v < 2) {
     db.weights.forEach(w => { w.id = w.id || uid(); w.type = w.type || "wake"; });
     db.labs.forEach(l => { if (l.range == null) { l.range = l.note || ""; delete l.note; } });
-    if (!db.settings.startWeight || db.settings.startWeight === 209) db.settings.startWeight = 220;
-    db.settings.startDate = db.settings.startDate || "2026-08-18";
     db.v = 2;
   }
   if (db.v < 3) {
@@ -369,20 +367,18 @@ function migrate(db) {
     delete db.planks; delete db.pushups; delete s.plankGoal; delete s.pushupGoal;
     db.v = 3;
   }
+  if (db.v < 5) {
+    // data saved by an earlier version already has a profile, so skip first-time setup
+    if (hadSaved) db.settings.setupDone = true;
+  }
   if (db.v < 4) {
     if (!db.foods.length) db.foods = FOOD_TABLE.map(([name, serving, amt, unit, cal, protein, aliases]) => ({ id: uid(), name, serving, amt, unit, cal, protein, aliases, src: "table" }));
-    db.v = 4;
   }
+  db.v = DEFAULTS.v;
   const ex = JSON.parse(JSON.stringify(DEFAULTS.settings.exercises));
   for (const a of Object.keys(AREAS)) if (db.settings.exercises && Array.isArray(db.settings.exercises[a])) ex[a] = db.settings.exercises[a];
   db.settings.exercises = ex;
   if (!Array.isArray(db.settings.liftGoals)) db.settings.liftGoals = [];
-  if (!db.settings.backfilled) {
-    for (const [date, w, type, note] of BACKFILL)
-      if (!db.weights.some(x => x.date === date && x.type === type))
-        db.weights.push({ id: uid(), date, w, type, note, src: "manual" });
-    db.settings.backfilled = true;
-  }
   return db;
 }
 function save() {
@@ -460,25 +456,59 @@ function upsertWeight(entry) {
 // =====================================================================
 // Apple Health sync via link (from the iPhone Shortcut)
 // =====================================================================
-function handleSyncLink() {
-  const p = new URLSearchParams(location.search);
-  if (!p.has("w")) return;
-  const w = num(p.get("w"));
-  let bf = num(p.get("bf"));
+// Imports w (lb), bf (%), bmi, lean, mm (muscle lb), d (date), t (type). Empty or junk values are skipped.
+function importSync(p) {
+  const get = k => num(p.get(k));
+  let w = get("w"), bf = get("bf");
   if (bf != null && bf > 0 && bf < 1) bf = bf * 100; // Health sometimes gives 0.241 for 24.1%
   const dm = (p.get("d") || "").match(/\d{4}-\d{2}-\d{2}/);
   const date = dm ? dm[0] : today();
   const type = TYPES[p.get("t")] ? p.get("t") : "wake";
-  history.replaceState(null, "", location.pathname + location.hash);
-  if (w == null || w < 50 || w > 700) { setTimeout(() => toast("Sync link had no usable weight"), 300); return; }
-  const entry = { date, type, w: Math.round(w * 10) / 10, src: "health" };
-  if (bf != null && bf > 0 && bf < 80) entry.bf = Math.round(bf * 10) / 10;
-  const bmi = num(p.get("bmi")); if (bmi != null && bmi > 5 && bmi < 100) entry.bmi = Math.round(bmi * 10) / 10;
-  const lean = num(p.get("lean")); if (lean != null && lean > 20 && lean < 500) entry.lean = Math.round(lean * 10) / 10;
-  const mm = num(p.get("mm")); if (mm != null && mm > 20 && mm < 500) entry.muscle = Math.round(mm * 10) / 10;
-  upsertWeight(entry);
+  const extra = {}, rnd = n => Math.round(n * 10) / 10;
+  if (bf != null && bf > 0 && bf < 80) extra.bf = rnd(bf);
+  const bmi = get("bmi"); if (bmi != null && bmi > 5 && bmi < 100) extra.bmi = rnd(bmi);
+  const lean = get("lean"); if (lean != null && lean > 20 && lean < 500) extra.lean = rnd(lean);
+  const mm = get("mm"); if (mm != null && mm > 20 && mm < 500) extra.muscle = rnd(mm);
+  const parts = [extra.bf != null ? `${extra.bf}% fat` : "", extra.bmi != null ? `BMI ${extra.bmi}` : "", extra.lean != null ? `${extra.lean} lb lean` : "", extra.muscle != null ? `${extra.muscle} lb muscle` : ""].filter(Boolean);
+  if (w != null && (w < 50 || w > 700)) w = null;
+  if (w == null) {
+    const ex = db.weights.find(x => x.date === date && x.type === type);
+    if (ex && parts.length) { Object.assign(ex, extra); db.settings.lastSync = new Date().toISOString(); save(); return `No weight in the link — added ${parts.join(", ")} to your ${fmtD(date)} reading`; }
+    return "The link had no weight, so nothing was imported";
+  }
+  upsertWeight({ date, type, w: rnd(w), src: "health", ...extra });
   db.settings.lastSync = new Date().toISOString(); save();
-  setTimeout(() => toast(`Synced ${r1(entry.w)} lb from Apple Health (${fmtD(date)})`), 300);
+  return `Synced ${r1(w)} lb${parts.length ? " · " + parts.join(" · ") : ""} (${fmtD(date)})`;
+}
+function handleSyncLink() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has("w")) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  const msg = importSync(p);
+  setTimeout(() => toast(msg), 300);
+}
+async function exportBackup() {
+  const name = `health-tracker-backup-${today()}.json`;
+  const json = JSON.stringify({ ...db, exportedAt: new Date().toISOString() }, null, 2);
+  const done = () => { db.settings.lastBackup = new Date().toISOString(); save(); render(); toast("Backup saved"); };
+  try {
+    const file = new File([json], name, { type: "application/json" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Health Tracker backup" }); done(); return; }
+  } catch (err) { if (err && err.name === "AbortError") return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([json], { type: "application/json" })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  done();
+}
+// "Sync from Health" button: read the link the Shortcut copied to the clipboard
+async function clipboardSync() {
+  let text = "";
+  try { text = await navigator.clipboard.readText(); } catch (e) {}
+  if (!/[?&]w=/.test(text)) text = prompt("Paste the sync link from your Health shortcut (it should contain ?w=…):", "") || "";
+  if (!text.trim()) return;
+  const q = text.trim().match(/[?&](w=[^\s#]*)/);
+  if (!q) { toast("That doesn't look like a sync link (no ?w=)"); return; }
+  toast(importSync(new URLSearchParams(q[1].replace(/&amp;/g, "&"))));
+  render();
 }
 
 // =====================================================================
@@ -604,7 +634,7 @@ const S = {
 const HEART_TIPS = [
   "Swap saturated fat (fatty red meat, butter, full-fat dairy, fried food) for unsaturated fat (olive oil, nuts, avocado, fish).",
   "Add soluble fiber — oats, beans, lentils, apples, berries.",
-  "Get at least 150 minutes of moderate activity a week (your incline walks and rides count).",
+  "Get at least 150 minutes of moderate activity a week (brisk walks and bike rides count).",
   "Losing even 5–10% of body weight tends to improve lipid numbers.",
   "Limit alcohol and don't smoke."
 ];
@@ -675,7 +705,7 @@ const TESTS = [
     what: "The main male sex hormone, which supports muscle, bone, energy, mood and sex drive. It's highest in the morning, so tests are usually drawn early.",
     high: "High levels in men are uncommon without supplements; your lab's upper limit is the best guide.",
     low: "The American Urological Association uses below 300 ng/dL — on two separate early-morning tests, plus symptoms — to support a diagnosis of low testosterone. Excess weight, poor sleep and some medicines can lower it.",
-    tips: ["Losing excess body fat often raises testosterone.", "Prioritize 7–9 hours of sleep.", "Strength training (once your PT clears you) and regular activity help.", "Limit alcohol."],
+    tips: ["Losing excess body fat often raises testosterone.", "Prioritize 7–9 hours of sleep.", "Strength training and regular activity help.", "Limit alcohol."],
     src: ["aua", "medT"] },
   { k: "egfr", name: "eGFR", alias: ["gfr", "estimated gfr"], unit: "mL/min/1.73m²", unitAlt: ["ml/min/1.73m2", "ml/min/1.73 m2", "ml/min"], panel: "Kidney",
     bands: [[45, "bad", "Reduced", "Below 45"], [60, "warn", "Mildly–moderately reduced", "45–59"], [Infinity, "good", "Normal range", "60 and above"]],
@@ -845,7 +875,7 @@ function rememberEx(area, name) {
 }
 function lockCheck(e) {
   if (db.settings.shouldersCleared || (e.area !== "upper" && !isUpperEx(e.ex))) return;
-  return `${e.area === "upper" ? "Upper-body exercises are" : `"${e.ex}" is an upper-body exercise and is`} locked until your PT clears your shoulders. You can unlock them on the Fitness tab or in Settings.`;
+  return `${e.area === "upper" ? "Upper-body exercises are" : `"${e.ex}" is an upper-body exercise and is`} locked until your PT or doctor clears you. You can unlock them on the Fitness tab or in Settings.`;
 }
 const F = (name, label, kind, o = {}) => ({ name, label, kind, ...o });
 const D = (label = "Date", o = {}) => F("date", label, "date", { req: 1, maxToday: 1, ...o });
@@ -870,6 +900,13 @@ const SPEC = {
       [F("aliases", "Synonyms (comma separated, optional)", "text", { ph: "e.g. pb, peanut butta" })]],
     check(e) { e.aliases = e.aliases.split(",").map(x => x.trim()).filter(Boolean); if (!(e.amt > 0)) e.amt = 1; e.protein = e.protein || 0; } },
   presets: { title: "My Food", rows: [[F("name", "Name", "text", { req: 1 })]] },
+  body: { title: "scale measurements", added: "Measurements saved",
+    rows: [[D()], [F("muscle", "Muscle mass (lb)", "num", { step: "0.1", min: 0 }), F("skeletal", "Skeletal muscle (%)", "num", { step: "0.1", min: 0, max: 100 })],
+      [F("ffm", "Fat-free mass (lb)", "num", { step: "0.1", min: 0 }), F("bone", "Bone mass (lb)", "num", { step: "0.1", min: 0 })],
+      [F("visceral", "Visceral fat (level)", "num", { step: "0.1", min: 0 }), F("subq", "Subcutaneous fat (%)", "num", { step: "0.1", min: 0, max: 100 })],
+      [F("water", "Body water (%)", "num", { step: "0.1", min: 0, max: 100 }), F("protein", "Protein (%)", "num", { step: "0.1", min: 0, max: 100 })],
+      [F("metage", "Metabolic age (years)", "int", { min: 1, max: 120 })], [F("note", "Note", "text", { ph: "optional" })]],
+    check: e => { if (!BODY_METRICS.some(([k]) => e[k] != null)) return "Enter at least one measurement."; } },
   cheats: { title: "cheat meal",
     rows: [[D("Day", { maxToday: 0 })], [F("text", "What's the plan?", "text", { req: 1 })], [F("done", "Already had it", "check")]] },
   fasts: { title: "fast",
@@ -931,7 +968,7 @@ function fieldHtml(fd, v, vals) {
   if (kind === "area") {
     const locked = !db.settings.shouldersCleared;
     return `<label>${label}<select name="area">${(fd.core ? ["core", "lower", "upper"] : ["lower", "upper"]).map(a =>
-      `<option value="${a}"${a === v ? " selected" : ""}${a === "upper" && locked && v !== "upper" ? " disabled" : ""}>${AREAS[a]}${a === "upper" && locked ? " 🔒 (needs PT clearance)" : ""}</option>`).join("")}</select></label>`;
+      `<option value="${a}"${a === v ? " selected" : ""}${a === "upper" && locked && v !== "upper" ? " disabled" : ""}>${AREAS[a]}${a === "upper" && locked ? " 🔒 (needs clearance)" : ""}</option>`).join("")}</select></label>`;
   }
   if (kind === "textarea") return `<label>${label}<textarea name="${name}" rows="2"${req}${ph}>${esc(v)}</textarea></label>`;
   if (kind === "ex") return `<label>${label}<input name="ex" list="dl-${fd.list || vals.area || "lower"}" value="${esc(v)}" autocomplete="off" placeholder="Pick one or type your own"${req}></label>`;
@@ -1005,11 +1042,14 @@ function renderTabs() {
 }
 function greeting() {
   const h = new Date().getHours();
-  return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + " · " + new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + (db.settings.name ? ", " + db.settings.name : "") + " · " + new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 function render() {
   const views = { home: viewHome, weight: viewWeight, food: viewFood, fitness: viewFitness, labs: viewLabs, settings: viewSettings };
   if (!views[current]) current = "home";
+  const setup = needsSetup();
+  document.body.classList.toggle("setup", setup);
+  if (setup) { $("#eyebrow").textContent = "Health Tracker"; $("#title").textContent = "Welcome"; $("#view").innerHTML = viewSetup(); $("#tabs").innerHTML = ""; rendered = null; return; }
   $("#eyebrow").textContent = greeting();
   $("#title").textContent = current === "settings" ? "Settings" : current === "home" ? "Dashboard" : TABS.find(t => t[0] === current)[1];
   renderDatalists();
@@ -1028,6 +1068,77 @@ function go(tab, focus) {
   window.scrollTo(0, 0); render();
   if (focus) { const d = document.getElementById(focus); if (d) { if (d.tagName === "DETAILS") d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } }
 }
+
+// =====================================================================
+// First-time setup
+// =====================================================================
+const needsSetup = () => !db.settings.setupDone || !db.settings.startWeight;
+const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,application/json" data-act="import" style="display:none"></label>`;
+function viewSetup() {
+  const s = db.settings;
+  return `<div class="card hero"><h2>Let's set you up</h2>
+    <p class="muted" style="margin-top:0">A few details to personalize your tracker. Everything stays on this device, and you can change it later in Settings.</p>
+    <form data-form="setup">
+      <label>Your name<input name="name" value="${esc(s.name)}" placeholder="optional" autocomplete="given-name"></label>
+      <div class="row">
+        <label>Starting weight (lb)<input type="number" name="startWeight" step="0.1" min="50" max="700" inputmode="decimal" value="${s.startWeight ?? ""}" required></label>
+        <label>Start date<input type="date" name="startDate" value="${s.startDate || today()}" max="${today()}" required></label>
+      </div>
+      <label>Goal weights (lb, comma separated — the lowest is your final goal)<input name="goals" value="${esc((s.goals || []).join(", "))}" placeholder="e.g. 200, 190, 180" required inputmode="decimal"></label>
+      <p class="muted" style="margin:14px 0 6px">Do you have an injury that should lock upper-body exercises (push-ups, presses, rows) until a PT or doctor clears you?</p>
+      <div class="seg" role="radiogroup">
+        <label class="check" style="justify-content:center;margin:0"><input type="radio" name="injury" value="yes" ${s.setupDone && !s.shouldersCleared ? "checked" : ""} required style="width:20px;height:20px">Yes, lock them</label>
+        <label class="check" style="justify-content:center;margin:0"><input type="radio" name="injury" value="no" ${s.setupDone && s.shouldersCleared ? "checked" : ""} style="width:20px;height:20px">No</label>
+      </div>
+      <button class="btn block" style="margin-top:8px">Start tracking</button>
+    </form></div>
+  <div class="card"><h2>Already have a backup?</h2>
+    <p class="muted" style="margin-top:0">Load a backup file saved from this app (from Files or iCloud Drive) to bring all your data back.</p>
+    ${RESTORE_BTN("Restore from backup")}</div>`;
+}
+// =====================================================================
+// Streak: days in a row with anything logged
+// =====================================================================
+function activityDays() {
+  const days = new Set();
+  for (const k of ["weights", "meals", "cardio", "core", "strength", "body", "labs"]) for (const x of db[k]) if (x.date) days.add(x.date);
+  for (const f of db.fasts) days.add(dstr(new Date(f.start)));
+  return days;
+}
+function streak() {
+  const days = activityDays(), t = today(), todayDone = days.has(t);
+  let n = 0;
+  for (let d = todayDone ? t : addDays(t, -1); days.has(d); d = addDays(d, -1)) n++;
+  let best = 0, run = 0, prev = null;
+  for (const d of [...days].filter(d => d <= t).sort()) { run = prev && addDays(prev, 1) === d ? run + 1 : 1; best = Math.max(best, run); prev = d; }
+  return { n, todayDone, best };
+}
+const FLAME = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c.6 3.2-1 5.3-2.6 7.2C8 10.9 6.5 12.6 6.5 15.2A5.5 5.5 0 0 0 12 21a5.5 5.5 0 0 0 5.5-5.6c0-2.3-1-4-2.1-5.3-.3 1.4-1 2.5-2.1 3 .5-3.6-.2-7.9-1.3-11.1Z"/></svg>';
+// =====================================================================
+// Scale-only body measurements (Renpho etc.)
+// =====================================================================
+const BODY_METRICS = [["muscle", "Muscle mass", "lb"], ["skeletal", "Skeletal muscle", "%"], ["ffm", "Fat-free mass", "lb"], ["visceral", "Visceral fat", ""],
+  ["subq", "Subcutaneous fat", "%"], ["water", "Body water", "%"], ["protein", "Protein", "%"], ["bone", "Bone mass", "lb"], ["metage", "Metabolic age", "yrs"]];
+let bMetric = "muscle";
+const fmtM = (v, u) => v == null ? "—" : `${nf(v)}${u === "%" ? "%" : u ? " " + u : ""}`;
+function bodyCard() {
+  const all = [...db.body].sort((a, b) => a.date.localeCompare(b.date)), rows = newestFirst(db.body);
+  const lastOf = k => { const h = all.filter(x => x[k] != null); return [h[h.length - 1], h[h.length - 2]]; };
+  const has = all.filter(x => x[bMetric] != null).length;
+  return `<div class="card"><h2>Scale measurements <small>Renpho &amp; similar</small></h2>
+    ${all.length ? `<div class="mgrid">${BODY_METRICS.map(([k, l, u]) => { const [a, b] = lastOf(k), d = a && b ? a[k] - b[k] : null;
+      return `<div><div class="faint">${l}</div><div class="n">${fmtM(a && a[k], u)}</div><div class="faint">${d == null ? (a ? fmtD(a.date) : "") : `${d > 0 ? "▲" : d < 0 ? "▼" : "="} ${nf(Math.abs(d))} since last`}</div></div>`; }).join("")}</div>
+      <h2 style="margin-top:20px">Trend</h2>
+      <select id="bodyMetric" aria-label="Measurement to chart" style="margin:0 0 10px">${BODY_METRICS.map(([k, l]) => `<option value="${k}"${k === bMetric ? " selected" : ""}>${l}</option>`).join("")}</select>
+      ${has ? `<div class="chart" id="bodyChart"></div>` : `<p class="faint">No ${BODY_METRICS.find(m => m[0] === bMetric)[1].toLowerCase()} readings yet.</p>`}`
+      : `<p class="faint" style="margin-top:0">Numbers your smart scale shows that Apple Health doesn't sync. Fill in whichever ones you have.</p>`}
+    <details id="logBody" style="margin-top:14px" ${all.length ? "" : "open"}><summary>Add measurements</summary>
+      <form data-form="add" data-k="body">${specFields("body", { date: today() })}<button class="btn block">Save measurements</button></form></details>
+    ${rows.length ? `<details id="bodyList" style="margin-top:12px"><summary>All entries (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
+      <div class="faint">${BODY_METRICS.filter(([k]) => x[k] != null).map(([k, l, u]) => `${l} ${fmtM(x[k], u)}`).join(" · ")}${x.note ? " · " + esc(x.note) : ""}</div></div>${rowBtns("body", x.id)}</li>`)}</details>` : ""}
+  </div>`;
+}
+const backupAgeDays = () => db.settings.lastBackup ? Math.floor((Date.now() - new Date(db.settings.lastBackup)) / 864e5) : null;
 
 // =====================================================================
 // Home dashboard
@@ -1058,6 +1169,11 @@ function viewHome() {
     <div class="bar" style="margin-top:16px"><span style="width:${pctAll}%"></span></div>
     <div class="faint" style="margin-top:6px;display:flex;justify-content:space-between"><span>${r1(s.startWeight)}</span><span>${Math.round(pctAll)}% to ${finalG}</span><span>${finalG}</span></div>
   </div>
+  ${(() => { const st = streak(); return `<div class="card streak" style="${st.n ? "" : "opacity:.85"}"><span style="color:${st.n ? "var(--accent)" : "var(--ink-3)"}">${FLAME}</span>
+    <div style="flex:1"><div><span class="v">${st.n}</span> <b>day${st.n === 1 ? "" : "s"} in a row</b></div>
+      <div class="faint">${st.n ? (st.todayDone ? "Logged today — nice." : "Log anything today to keep it going.") : "Log anything today to start a streak."}${st.best > 1 ? ` Best: ${st.best} days.` : ""}</div></div></div>`; })()}
+  <button class="btn secondary block" data-act="clipSync" style="margin-bottom:12px">⟳ Sync from Health</button>
+  ${(() => { const age = backupAgeDays(); return age == null || age > 14 ? `<button class="banner warn" data-tab="settings" style="display:block;width:100%;text-align:left;border:0;font:inherit;cursor:pointer">${age == null ? "<b>No backup yet.</b>" : `<b>Last backup ${age} days ago.</b>`} Your data lives only in this browser — tap to save a backup file.</button>` : ""; })()}
   <div class="actions">
     <button data-act="quick" data-go="weight" data-focus="logWeight">${ICONS.plus}Log weight</button>
     <button data-act="${active ? "endFast" : "startFast"}">${ICONS.food}${active ? "End fast" : "Start fast"}</button>
@@ -1164,13 +1280,14 @@ function viewWeight() {
     </div>
     ${all.filter(w => w.bf != null).length >= 2 ? `<h2 style="margin-top:18px">Body fat %</h2><div class="chart" id="bfChart"></div>` : ""}
   </div>
+  ${bodyCard()}
   <div class="card">
     <details id="logWeight" ${db.weights.length ? "" : "open"}>
       <summary>Log a weigh-in</summary>
       <form data-form="weight">
         <div class="row">
           <label>Date<input type="date" name="date" value="${t}" max="${t}" required></label>
-          <label>Weight (lb)<input type="number" name="w" step="0.1" inputmode="decimal" placeholder="209.8" required></label>
+          <label>Weight (lb)<input type="number" name="w" step="0.1" inputmode="decimal" placeholder="e.g. 180.4" required></label>
         </div>
         <label>When<select name="type"><option value="wake">Wake-up (used for trend)</option><option value="walk">Post-walk</option><option value="other">Other</option></select></label>
         <div class="row">
@@ -1228,6 +1345,13 @@ function drawWeightCharts() {
   if (bfel) {
     const bf = allWeights().filter(w => w.bf != null);
     drawChart(bfel, { points: bf.map(w => ({ t: tms(w.date), y: w.bf, tip: `<b>${fmtD(w.date)}</b> · ${r1(w.bf)}%` })), line: bf.map(w => ({ t: tms(w.date), y: w.bf })), refs: [], height: 170, label: "Body fat percent" });
+  }
+  const bel = $("#bodyChart");
+  if (bel) {
+    const [, label, u] = BODY_METRICS.find(m => m[0] === bMetric);
+    const pts = [...db.body].filter(x => x[bMetric] != null).sort((a, b) => a.date.localeCompare(b.date));
+    drawChart(bel, { points: pts.map(x => ({ t: tms(x.date), y: x[bMetric], tip: `<b>${fmtD(x.date)}</b> · ${fmtM(x[bMetric], u)}` })),
+      line: pts.map(x => ({ t: tms(x.date), y: x[bMetric] })), refs: [], height: 170, label });
   }
 }
 
@@ -1591,11 +1715,11 @@ function fitStrength() {
       <p class="faint">Logging a whole workout? Add each exercise, and put the time on one of them (or split it) — it all counts toward your weekly minutes.</p></form>`,
     thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(exRow("strength")).join("")}</ul>` : "")}
   ${cleared ? "" : `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">Upper-body exercises locked</h2>
-    <p class="muted">Push-ups, presses, rows and other upper-body work unlock once your physical therapist clears your shoulders${nLocked ? ` — your ${nLocked} upper-body goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}. Lower-body work is open now.</p>
-    <button class="btn secondary" data-act="clearShoulders">My PT cleared me</button></div>`}
+    <p class="muted">Push-ups, presses, rows and other upper-body work unlock once your physical therapist or doctor clears you${nLocked ? ` — your ${nLocked} upper-body goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}. Lower-body work is open now.</p>
+    <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`}
   <div class="card"><h2>Strength goals ${goalsLink}</h2>
     ${goals.length ? goalList(goals) : `<p class="faint">No strength goals yet — add them in Settings.</p>`}
-    ${cleared && s.clearedDate ? `<p class="faint">Shoulders cleared by PT on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
+    ${cleared && s.clearedDate ? `<p class="faint">Cleared for upper-body work on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
   <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.strengthTarget} min</small></h2>${weekBars(db.strength, s.strengthTarget)}</div>
   ${older.length ? `<div class="card"><h2>Earlier workouts</h2>${moreList(older, 10, exRow("strength"))}</div>` : ""}`;
 }
@@ -1610,7 +1734,7 @@ function fitCore() {
     <div class="faint">${nEx ? `${nEx} different exercise${nEx === 1 ? "" : "s"}` : "Nothing logged yet this week"}</div>
     <form data-form="add" data-k="core" id="coreForm" style="margin-top:18px">${specFields("core", { date: t, sets: 3, ...lastAdd.core })}
       <button class="btn block">Log exercise</button>
-      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${s.shouldersCleared ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT before doing those."}</p></form>
+      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${s.shouldersCleared ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT or doctor before doing those."}</p></form>
   </div>
   <div class="card"><h2>Core goals ${goalsLink}</h2>
     ${goals.length ? goalList(goals) : `<p class="faint">No core goals yet — add them in Settings.</p>`}</div>
@@ -1732,7 +1856,7 @@ function viewSettings() {
   const appUrl = location.origin + location.pathname;
   const ft = s.heightIn ? Math.floor(s.heightIn / 12) : "", inch = s.heightIn ? Math.round(s.heightIn % 12) : "";
   const nUpper = s.liftGoals.filter(g => g.area === "upper").length;
-  const backupAge = s.lastBackup ? Math.floor((Date.now() - new Date(s.lastBackup)) / 864e5) : null;
+  const backupAge = backupAgeDays();
   return `
   ${navigator.standalone ? `<div class="banner warn"><b>Heads up:</b> you opened the home-screen web-app version. iPhone keeps its data separate from Safari's, and the Apple Health Shortcut opens Safari. Use the Shortcut as your home-screen icon instead (see the setup guide).</div>` : ""}
   <div class="card"><h2>Apple Health sync</h2>
@@ -1744,6 +1868,7 @@ function viewSettings() {
   </div>
   <div class="card"><h2>Profile & goals</h2>
     <form data-form="settings">
+      <label>Name<input name="name" value="${esc(s.name)}" placeholder="optional"></label>
       <div class="row">
         <label>Starting weight (lb)<input type="number" name="startWeight" step="0.1" value="${s.startWeight ?? ""}" inputmode="decimal"></label>
         <label>Start date<input type="date" name="startDate" value="${s.startDate || ""}"></label>
@@ -1766,13 +1891,13 @@ function viewSettings() {
         <label>Daily burn override (cal)<input type="number" name="burnOverride" min="800" max="6000" value="${s.burnOverride ?? ""}" inputmode="numeric" placeholder="auto"></label>
       </div>
       <p class="faint" style="margin-top:-4px">Resting burn is estimated from your weight, height and age (male formula) unless you enter your own daily number; logged exercise is added on top.</p>
-      <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>PT has cleared my shoulders for upper-body work</label>
+      <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>Upper-body exercises unlocked (no injury, or my PT/doctor has cleared me)</label>
       <button class="btn block" style="margin-top:12px">Save settings</button>
     </form>
   </div>
   <div class="card"><h2>Exercise goals <small>core &amp; strength</small></h2>
     ${goalList(s.liftGoals.filter(g => g.area !== "upper" || s.shouldersCleared)) || `<p class="faint">No exercise goals yet.</p>`}
-    ${!s.shouldersCleared && nUpper ? `<p class="faint">🔒 ${nUpper} upper-body goal${nUpper === 1 ? "" : "s"} can be edited once your PT clears your shoulders.</p>` : ""}
+    ${!s.shouldersCleared && nUpper ? `<p class="faint">🔒 ${nUpper} upper-body goal${nUpper === 1 ? "" : "s"} can be edited once you're cleared for upper-body work.</p>` : ""}
     <details style="margin-top:12px"><summary>Add a goal</summary>
       <form data-form="add" data-k="liftGoals">${specFields("liftGoals", { area: "lower", sets: 3 })}
         <p class="faint" style="margin-top:-4px">A goal is met by one logged entry with at least these sets and reps (and weight or hold time, if set).</p>
@@ -1783,11 +1908,11 @@ function viewSettings() {
     <form data-form="exlists">${Object.keys(AREAS).map(a => `<label>${AREAS[a]}${a === "upper" && !s.shouldersCleared ? " 🔒" : ""}<textarea name="${a}" rows="5">${esc(s.exercises[a].join("\n"))}</textarea></label>`).join("")}
       <button class="btn secondary block">Save exercise lists</button></form>
   </div>
-  <div class="card"><h2>Backup</h2>
-    <p class="muted" style="margin-top:0">Your data lives only on this phone, in Safari. Save a backup file now and then (to Files or iCloud Drive) so you never lose it.</p>
+  <div class="card"><h2>Backup &amp; restore</h2>
+    <p class="muted" style="margin-top:0">Your data lives only in this browser on this device. <b>Save backup</b> creates one file with everything — on iPhone choose <b>Save to Files</b> and pick iCloud Drive. <b>Restore</b> loads that file back in, replacing what's on this device.</p>
     ${backupAge == null || backupAge > 14 ? `<div class="banner warn">${backupAge == null ? "You haven't made a backup yet." : `Last backup was ${backupAge} days ago.`}</div>` : `<p class="faint">Last backup ${backupAge === 0 ? "today" : backupAge + " days ago"}.</p>`}
-    <div class="btn-row"><button class="btn" data-act="export">Save backup</button>
-    <label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">Restore<input type="file" accept=".json,application/json" data-act="import" style="display:none"></label></div>
+    <div class="btn-row"><button class="btn" data-act="export">Save backup</button>${RESTORE_BTN("Restore")}</div>
+    <p class="faint">Safari can clear website data for sites you haven't opened in a while, and the home-screen version keeps separate data — a recent backup covers both.</p>
   </div>
   <div class="card"><h2>Danger zone</h2>
     <button class="btn danger" data-act="wipe">Erase all data on this device</button></div>
@@ -1825,6 +1950,18 @@ const forms = {
     if (err) { alert(err); return false; }
     Object.assign(item, e); editing = null; save(); toast("Changes saved");
   },
+  setup(f) {
+    const s = db.settings, sw = num(f.get("startWeight"));
+    const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50 && g < 700);
+    if (sw == null || sw < 50 || sw > 700) { alert("Enter your starting weight in pounds."); return false; }
+    if (!goals.length) { alert("Enter at least one goal weight in pounds."); return false; }
+    s.name = String(f.get("name") || "").trim(); s.startWeight = sw; s.startDate = f.get("startDate") || today();
+    s.goals = [...new Set(goals)].sort((a, b) => b - a);
+    s.shouldersCleared = f.get("injury") !== "yes";
+    if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: sw, type: "other", note: "Starting weight", src: "manual" });
+    s.setupDone = true; save(); current = "home";
+    toast(s.name ? `Welcome, ${s.name}!` : "You're all set");
+  },
   exlists(f) {
     for (const a of Object.keys(AREAS)) {
       const seen = new Set();
@@ -1841,6 +1978,7 @@ const forms = {
   settings(f) {
     const s = db.settings, ft = num(f.get("ft")), inch = num(f.get("in"));
     s.heightIn = ft ? ft * 12 + (inch || 0) : null;
+    s.name = String(f.get("name") || "").trim();
     s.startWeight = num(f.get("startWeight")) || s.startWeight;
     s.startDate = f.get("startDate") || s.startDate;
     const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50);
@@ -1871,15 +2009,20 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   syncExList(e.target);
+  if (e.target.id === "bodyMetric") { bMetric = e.target.value; render(); return; }
   if (e.target.type === "checkbox" && e.target.dataset.draft) { draftInput(e.target); return; }
   if (e.target.dataset.act !== "import") return;
   const file = e.target.files[0]; if (!file) return;
+  e.target.value = "";
   file.text().then(txt => {
     const data = JSON.parse(txt);
-    if (!data || !Array.isArray(data.weights)) throw new Error("not a Health Tracker backup");
-    if (!confirm("Replace everything on this device with the backup file?")) return;
-    localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); render(); toast("Backup restored");
-  }).catch(err => alert("Couldn't read that file: " + err.message));
+    if (!data || typeof data !== "object" || !Array.isArray(data.weights)) throw new Error("it isn't a Health Tracker backup");
+    const n = k => Array.isArray(data[k]) ? data[k].length : 0;
+    const made = data.exportedAt ? ` from ${fmtDT(data.exportedAt)}` : "";
+    if (!confirm(`Restore this backup${made}?\n\n${n("weights")} weigh-ins, ${n("meals")} meals, ${n("cardio") + n("strength") + n("core")} workouts, ${n("labs")} lab results.\n\nIt replaces everything currently on this device (a safety copy of the current data is kept).`)) return;
+    try { localStorage.setItem(KEY + ".before-restore", JSON.stringify(db)); } catch (err) {}
+    localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); current = "home"; render(); toast("Backup restored");
+  }).catch(err => alert("Couldn't restore that file: " + err.message));
 });
 document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealFormOpen = e.target.open; }, true);
 document.addEventListener("keydown", e => {
@@ -1946,7 +2089,7 @@ document.addEventListener("click", e => {
     render(); return;
   }
   if (act === "clearShoulders") {
-    if (confirm("Has your physical therapist cleared you for push-ups and upper-body work?")) { db.settings.shouldersCleared = true; db.settings.clearedDate = today(); save(); toast("Upper-body exercises unlocked 💪"); render(); }
+    if (confirm("Has your physical therapist or doctor cleared you for push-ups and upper-body work?")) { db.settings.shouldersCleared = true; db.settings.clearedDate = today(); save(); toast("Upper-body exercises unlocked 💪"); render(); }
     return;
   }
   if (act === "copyUrl") {
@@ -1955,13 +2098,8 @@ document.addEventListener("click", e => {
     return;
   }
   if (act === "testSync") { location.href = location.pathname + "?w=208.6&bf=24.1&bmi=29.1&lean=158.3&d=" + today(); return; }
-  if (act === "export") {
-    db.settings.lastBackup = new Date().toISOString(); save();
-    const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `health-tracker-backup-${today()}.json`;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    render(); return;
-  }
+  if (act === "export") { exportBackup(); return; }
+  if (act === "clipSync") { clipboardSync(); return; }
   if (act === "wipe") {
     if (confirm("Erase ALL your data on this device? This can't be undone.") && confirm("Really erase everything?")) {
       localStorage.removeItem(KEY); db = load(); db.weights = []; save(); render(); toast("All data erased");
