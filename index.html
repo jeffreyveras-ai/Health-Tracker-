@@ -225,6 +225,14 @@ nav.tabs button.on svg { color: var(--accent); }
   transition: opacity .25s, transform .25s; pointer-events: none; z-index: 40; max-width: calc(100% - 32px); text-align: center;
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.frow { background: var(--card-2); border-radius: 12px; padding: 10px 12px 0; margin-top: 10px; }
+.frow.unmatched { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.frow input, .frow select { background: var(--card); }
+.frow-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.row.tight > label { flex: 1 1 80px; }
+.ftotal { background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 15px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+.chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 @media (max-width: 370px) { .tile .value { font-size: 30px; } .hero .big { font-size: 54px; } .stats3 .tile .value { font-size: 24px; } }
 </style>
 </head>
@@ -250,10 +258,10 @@ nav.tabs button.on svg { color: var(--accent); }
 const KEY = "healthTracker.v1";
 const AREAS = { core: "Core", lower: "Lower body", upper: "Upper body" };
 const DEFAULTS = {
-  v: 3,
+  v: 4,
   settings: {
     heightIn: null, startWeight: 220, startDate: "2026-08-18", goals: [207, 205, 197],
-    cardioTarget: 300, strengthTarget: 90, fastTarget: 16,
+    cardioTarget: 300, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
     // suggestions shown when logging; names you type in get added
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
@@ -264,8 +272,59 @@ const DEFAULTS = {
     liftGoals: [],
     shouldersCleared: false, clearedDate: null, lastBackup: null, lastSync: null
   },
-  weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: []
+  weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: [],
+  foods: [],   // food table: {id, name, serving, amt, unit, cal, protein, aliases, src}
+  presets: []  // My Foods: {id, name, items:[{foodId, name, servings, cal, protein}]}
 };
+// Built-in food table, copied into db.foods once so it can be edited.
+// [name, serving label, amount, unit, calories, protein g, synonyms]. Values are approximate (USDA-style averages).
+const FOOD_TABLE = [
+  ["Sweet potato", "1 medium", 1, "each", 100, 2, ["yam"]],
+  ["Turkey meatball", "1 meatball", 1, "each", 50, 5, ["meatball"]],
+  ["Large egg", "1 large", 1, "each", 75, 6, ["egg", "boiled egg", "fried egg", "scrambled egg"]],
+  ["Egg white", "1 large", 1, "each", 17, 3.6, []],
+  ["Banana", "1 medium", 1, "each", 105, 1, []],
+  ["Peanut butter", "1 tbsp", 1, "tbsp", 95, 4, ["pb"]],
+  ["Oats", "1/2 cup dry", 0.5, "cup", 150, 5, ["oatmeal", "rolled oats", "porridge"]],
+  ["Chicken breast", "4 oz cooked", 4, "oz", 185, 35, ["chicken", "grilled chicken"]],
+  ["Ground turkey (93% lean)", "4 oz cooked", 4, "oz", 170, 22, ["ground turkey", "turkey"]],
+  ["Lean ground beef (90%)", "4 oz cooked", 4, "oz", 245, 28, ["ground beef", "beef"]],
+  ["Sirloin steak", "4 oz cooked", 4, "oz", 230, 34, ["steak"]],
+  ["Salmon", "4 oz cooked", 4, "oz", 235, 25, ["salmon fillet"]],
+  ["Tuna (canned in water)", "1 can drained", 1, "can", 120, 26, ["tuna"]],
+  ["Shrimp", "4 oz cooked", 4, "oz", 110, 24, ["prawn"]],
+  ["Deli turkey", "2 oz", 2, "oz", 60, 10, ["turkey slice", "sliced turkey"]],
+  ["Bacon", "1 slice", 1, "slice", 45, 3, []],
+  ["Greek yogurt (nonfat, plain)", "1 cup", 1, "cup", 130, 23, ["greek yogurt", "yogurt"]],
+  ["Cottage cheese (low-fat)", "1/2 cup", 0.5, "cup", 90, 12, ["cottage cheese"]],
+  ["Milk (2%)", "1 cup", 1, "cup", 120, 8, ["milk"]],
+  ["Whey protein", "1 scoop", 1, "scoop", 120, 24, ["protein powder", "protein shake", "whey"]],
+  ["Protein bar", "1 bar", 1, "each", 200, 20, []],
+  ["Cheddar cheese", "1 oz", 1, "oz", 115, 7, ["cheese", "cheddar"]],
+  ["String cheese", "1 stick", 1, "each", 80, 7, ["mozzarella stick"]],
+  ["White rice", "1 cup cooked", 1, "cup", 205, 4, ["rice"]],
+  ["Brown rice", "1 cup cooked", 1, "cup", 220, 5, []],
+  ["Pasta", "1 cup cooked", 1, "cup", 200, 7, ["spaghetti", "noodle"]],
+  ["Whole wheat bread", "1 slice", 1, "slice", 80, 4, ["bread", "toast"]],
+  ["Flour tortilla", "1 medium", 1, "each", 140, 4, ["tortilla", "wrap"]],
+  ["Potato", "1 medium", 1, "each", 160, 4, ["baked potato"]],
+  ["Black beans", "1/2 cup", 0.5, "cup", 115, 8, ["bean"]],
+  ["Lentils", "1/2 cup cooked", 0.5, "cup", 115, 9, ["lentil"]],
+  ["Apple", "1 medium", 1, "each", 95, 0.5, []],
+  ["Orange", "1 medium", 1, "each", 60, 1, []],
+  ["Blueberries", "1 cup", 1, "cup", 85, 1, ["berries"]],
+  ["Strawberries", "1 cup", 1, "cup", 50, 1, []],
+  ["Broccoli", "1 cup", 1, "cup", 30, 2.5, []],
+  ["Spinach", "1 cup raw", 1, "cup", 7, 1, []],
+  ["Green salad", "2 cups", 2, "cup", 20, 1.5, ["salad", "lettuce"]],
+  ["Avocado", "1/2 avocado", 0.5, "each", 120, 1.5, []],
+  ["Almonds", "1 oz (23 nuts)", 1, "oz", 165, 6, ["almond", "nuts"]],
+  ["Hummus", "2 tbsp", 2, "tbsp", 70, 2, []],
+  ["Olive oil", "1 tbsp", 1, "tbsp", 120, 0, ["oil"]],
+  ["Butter", "1 tbsp", 1, "tbsp", 100, 0, []],
+  ["Rice cake", "1 cake", 1, "each", 35, 1, []],
+  ["Black coffee", "1 cup", 1, "cup", 2, 0, ["coffee"]]
+];
 const LEGACY = ["planks", "pushups"]; // v2 collections, folded into core/strength by migrate()
 // Readings you gave me to start with (lbs). Added once; never overwrite an existing reading.
 const BACKFILL = [
@@ -309,6 +368,10 @@ function migrate(db) {
     ];
     delete db.planks; delete db.pushups; delete s.plankGoal; delete s.pushupGoal;
     db.v = 3;
+  }
+  if (db.v < 4) {
+    if (!db.foods.length) db.foods = FOOD_TABLE.map(([name, serving, amt, unit, cal, protein, aliases]) => ({ id: uid(), name, serving, amt, unit, cal, protein, aliases, src: "table" }));
+    db.v = 4;
   }
   const ex = JSON.parse(JSON.stringify(DEFAULTS.settings.exercises));
   for (const a of Object.keys(AREAS)) if (db.settings.exercises && Array.isArray(db.settings.exercises[a])) ex[a] = db.settings.exercises[a];
@@ -798,7 +861,15 @@ const SPEC = {
       if (db.weights.some(x => x !== old && x.date === e.date && x.type === e.type)) return `There's already a ${TYPES[e.type].toLowerCase()} reading on ${fmtD(e.date)}. Edit or delete that one instead.`;
     } },
   meals: { title: "meal",
-    rows: [[D("Date", { maxToday: 0 }), F("time", "Time", "time", { req: 1 })], [F("text", "What did you eat?", "textarea", { req: 1 })], [F("cheat", "This was a cheat meal", "check")]] },
+    rows: [[D("Date", { maxToday: 0 }), F("time", "Time", "time", { req: 1 })], [F("text", "What did you eat?", "textarea", { req: 1 })],
+      [F("cal", "Calories (total)", "int", { min: 0 }), F("protein", "Protein g (total)", "num", { min: 0, step: "0.1" })], [F("cheat", "This was a cheat meal", "check")]] },
+  foods: { title: "food", added: "Food added",
+    rows: [[F("name", "Food name", "text", { req: 1 })], [F("serving", "Serving (as shown)", "text", { req: 1, ph: "e.g. 1 medium, 1/2 cup dry" })],
+      [F("amt", "Amount", "num", { req: 1, min: 0, step: "any" }), F("unit", "Unit", "select", { opts: () => FOOD_UNITS })],
+      [F("cal", "Calories", "num", { req: 1, min: 0, step: "any" }), F("protein", "Protein g", "num", { req: 1, min: 0, step: "any" })],
+      [F("aliases", "Synonyms (comma separated, optional)", "text", { ph: "e.g. pb, peanut butta" })]],
+    check(e) { e.aliases = e.aliases.split(",").map(x => x.trim()).filter(Boolean); if (!(e.amt > 0)) e.amt = 1; e.protein = e.protein || 0; } },
+  presets: { title: "My Food", rows: [[F("name", "Name", "text", { req: 1 })]] },
   cheats: { title: "cheat meal",
     rows: [[D("Day", { maxToday: 0 })], [F("text", "What's the plan?", "text", { req: 1 })], [F("done", "Already had it", "check")]] },
   fasts: { title: "fast",
@@ -850,6 +921,7 @@ const setColl = (k, v) => { if (k === "liftGoals") db.settings.liftGoals = v; el
 function fieldHtml(fd, v, vals) {
   const { name, kind } = fd, label = esc(fd.label), req = fd.req ? " required" : "";
   const ph = fd.ph ? ` placeholder="${esc(fd.ph)}"` : "";
+  if (Array.isArray(v)) v = v.join(", ");
   if (kind === "check") return `<label class="check"><input type="checkbox" name="${name}"${v ? " checked" : ""}>${label}</label>`;
   if (kind === "select") {
     const o = fd.opts(), opts = Array.isArray(o) ? o.map(x => [x, x]) : Object.entries(o);
@@ -923,6 +995,7 @@ const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Food"], [
 let current = "home";
 try { current = localStorage.getItem(KEY + ".tab") || "home"; } catch (e) {}
 let wView = "daily";
+let rendered = null;
 let fView = "cardio";
 let openLab = null;
 
@@ -940,7 +1013,11 @@ function render() {
   $("#eyebrow").textContent = greeting();
   $("#title").textContent = current === "settings" ? "Settings" : current === "home" ? "Dashboard" : TABS.find(t => t[0] === current)[1];
   renderDatalists();
+  // keep expandable sections as you left them when redrawing the same tab
+  const was = rendered === current ? [...document.querySelectorAll("#view details[id]")].map(d => [d.id, d.open]) : [];
   $("#view").innerHTML = views[current]();
+  for (const [id, open] of was) { const d = document.getElementById(id); if (d) d.open = open; }
+  rendered = current;
   renderTabs();
   if (current === "weight") drawWeightCharts();
   renderSheet();
@@ -966,6 +1043,7 @@ function viewHome() {
   const active = db.fasts.find(f => !f.end);
   const cardio = sumMin(db.cardio, weekStart(t)), strength = sumMin(db.strength, weekStart(t));
   const coreWk = db.core.filter(x => x.date >= weekStart(t)), coreSets = coreWk.reduce((a, x) => a + (x.sets || 1), 0);
+  const en = dayEnergy(t);
   const g = labGroups(), evals = Object.values(g).map(a => evalLab(a[a.length - 1]));
   const nBad = evals.filter(e => e.st === "bad").length, nWarn = evals.filter(e => e.st === "warn").length;
   return `
@@ -1001,6 +1079,13 @@ function viewHome() {
       <div class="value n">${cardio}<small>/ ${s.cardioTarget}</small></div>
       <div class="sub">${cardio >= s.cardioTarget ? "Target hit 🔥" : `${s.cardioTarget - cardio} min to go`}</div>
       <div class="bar ${cardio >= s.cardioTarget ? "good" : ""}"><span style="width:${Math.min(100, cardio / s.cardioTarget * 100)}%"></span></div></button>
+    <button class="tile" data-tab="food"><div class="label">Calories today</div>
+      <div class="value n">${en.in}<small>/ ${en.out}</small></div>
+      <div class="sub">${en.n ? (en.in <= en.out ? `${en.out - en.in} under (est.)` : `${en.in - en.out} over (est.)`) : "in / out — tap to log food"}</div></button>
+    <button class="tile" data-tab="food"><div class="label">Protein today</div>
+      <div class="value n">${en.protein}<small>/ ${s.proteinTarget} g</small></div>
+      <div class="sub">${en.protein >= s.proteinTarget ? "Target hit 💪" : `${r1n(s.proteinTarget - en.protein)} g to go`}</div>
+      <div class="bar ${en.protein >= s.proteinTarget ? "good" : ""}"><span style="width:${Math.min(100, en.protein / s.proteinTarget * 100)}%"></span></div></button>
     <button class="tile" data-tab="fitness" data-fv="strength"><div class="label">Strength this week</div>
       <div class="value n">${strength}<small>/ ${s.strengthTarget}</small></div>
       <div class="sub">${strength >= s.strengthTarget ? "Target hit 🔥" : `${s.strengthTarget - strength} min to go`}</div>
@@ -1147,8 +1232,203 @@ function drawWeightCharts() {
 }
 
 // =====================================================================
+// Food: text parser, food table matching, Open Food Facts, energy math
+// =====================================================================
+const UNITS = { tsp: "tsp", teaspoon: "tsp", tbsp: "tbsp", tbs: "tbsp", tbl: "tbsp", tablespoon: "tbsp", cup: "cup", c: "cup",
+  oz: "oz", ounce: "oz", g: "g", gram: "g", gr: "g", lb: "lb", pound: "lb", ml: "ml", slice: "slice", piece: "each", pc: "each",
+  each: "each", scoop: "scoop", can: "can", serving: "serving", bar: "each", stick: "each" };
+const FOOD_UNITS = ["each", "slice", "scoop", "can", "serving", "cup", "tbsp", "tsp", "oz", "g", "ml"];
+const CONVERT = [{ tsp: 1, tbsp: 3, cup: 48, ml: 0.2029 }, { g: 1, oz: 28.35, lb: 453.6 }];
+const NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, half: 0.5, dozen: 12 };
+const FRAC = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125 };
+const STOP = new Set(["of", "the", "some", "a", "an", "small", "medium", "large", "big", "whole", "cooked", "raw", "fresh", "plain", "my"]);
+const singular = w => w.length <= 3 ? w : w.endsWith("ies") ? w.slice(0, -3) + "y" : /(oes|ches|shes|xes|ses|zes)$/.test(w) && !w.endsWith("sses") ? w.slice(0, -2)
+  : w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") ? w.slice(0, -1) : w;
+const foodTokens = str => String(str || "").toLowerCase().replace(/[^a-z0-9%]+/g, " ").split(" ").filter(w => w && !STOP.has(w)).map(singular);
+const r1n = n => Math.round(n * 10) / 10;
+function parseChunk(raw) {
+  let s = raw.trim().replace(/[½¼¾⅓⅔⅛]/g, m => " " + FRAC[m] + " ").replace(/\s+/g, " ").trim(), qty = null, m;
+  if ((m = s.match(/^(\d+)\s+(\d+)\/(\d+)\b/))) qty = +m[1] + m[2] / m[3];
+  else if ((m = s.match(/^(\d+)\/(\d+)/))) qty = m[1] / m[2];
+  else if ((m = s.match(/^(\d+)\s+(0\.\d+)\b/))) qty = +m[1] + +m[2];
+  else if ((m = s.match(/^(\d*\.?\d+)\s*(?:x\b)?/i))) qty = +m[1];
+  else if ((m = s.match(/^(half(?:\s+an?)?|[a-z]+)\b/i)) && NUMW[m[1].split(" ")[0].toLowerCase()] != null) qty = NUMW[m[1].split(" ")[0].toLowerCase()];
+  else m = null;
+  if (m) s = s.slice(m[0].length).trim();
+  else if ((m = s.match(/\s*(?:x\s*)?(\d*\.?\d+)$/i))) { qty = +m[1]; s = s.slice(0, m.index).trim(); }
+  let unit = null;
+  const u = s.match(/^([a-z]+)\.?(?:\s+|$)/i);
+  if (u && UNITS[singular(u[1].toLowerCase())] && s.length > u[0].length) { unit = UNITS[singular(u[1].toLowerCase())]; s = s.slice(u[0].length); }
+  return { qty: qty == null ? 1 : qty, unit, name: s.replace(/^of\s+/i, "").trim() };
+}
+function matchFood(name) {
+  const t = foodTokens(name); if (!t.length) return null;
+  let best = null, bs = 0;
+  for (const f of db.foods) for (const key of [f.name, ...(f.aliases || [])]) {
+    const k = foodTokens(key); if (!k.length) continue;
+    const sc = k.every(w => t.includes(w)) ? k.length * 10 + (k.length === t.length ? 5 : 0) : t.every(w => k.includes(w)) ? t.length * 5 : 0;
+    if (sc > bs) { bs = sc; best = f; }
+  }
+  return best;
+}
+function servingsFor(qty, unit, f) {
+  if (!unit) return f.unit === "each" ? qty / (f.amt || 1) : qty;
+  if (unit === f.unit) return qty / (f.amt || 1);
+  for (const c of CONVERT) if (c[unit] && c[f.unit]) return qty * c[unit] / c[f.unit] / (f.amt || 1);
+  return qty;
+}
+const foodById = id => db.foods.find(f => f.id === id);
+const calcRow = r => { const f = foodById(r.foodId); if (f) { r.cal = Math.round(f.cal * r.servings); r.protein = r1n(f.protein * r.servings); } return r; };
+function parseMeal(text) {
+  const rows = [];
+  for (const chunk of String(text).split(/\s*(?:,|;|\n|\+|&|\band\b|\bwith\b)\s*/i).filter(c => c.trim())) {
+    const p = parseChunk(chunk), key = foodTokens(p.name).join(" ");
+    const preset = key && db.presets.find(x => foodTokens(x.name).join(" ") === key);
+    if (preset) { rows.push(...presetRows(preset, p.qty, chunk)); continue; }
+    const f = matchFood(p.name);
+    rows.push(f ? calcRow({ text: chunk.trim(), src: "text", foodId: f.id, servings: r1n(servingsFor(p.qty, p.unit, f) * 100) / 100 })
+      : { text: chunk.trim(), src: "text", foodId: null, servings: p.qty, cal: null, protein: null });
+  }
+  return rows;
+}
+function presetRows(p, mult = 1, text) {
+  return p.items.map(it => {
+    const r = { text: text || p.name, src: "preset", foodId: foodById(it.foodId) ? it.foodId : null, name: it.name, custom: !foodById(it.foodId),
+      servings: r1n(it.servings * mult * 100) / 100, cal: Math.round(it.cal * mult), protein: r1n(it.protein * mult) };
+    return r;
+  });
+}
+// Open Food Facts: free, no key. Search by name, or look up a barcode.
+const OFF_FIELDS = "code,product_name,brands,serving_size,serving_quantity,nutriments";
+function offFood(p) {
+  const n = p.nutriments || {}, sq = num(p.serving_quantity), k100 = num(n["energy-kcal_100g"]), p100 = num(n.proteins_100g);
+  let cal = num(n["energy-kcal_serving"]), pro = num(n.proteins_serving), serving = p.serving_size;
+  if (cal == null && sq && k100 != null) { cal = k100 * sq / 100; pro = p100 != null ? p100 * sq / 100 : null; }
+  if (cal == null && k100 != null) { cal = k100; pro = p100; serving = "100 g"; }
+  if (cal == null) return null;
+  const brand = p.brands ? String(p.brands).split(",")[0].trim() : "";
+  return { name: [brand, p.product_name].filter(Boolean).join(" ") || "Unnamed product", serving: serving || "1 serving", amt: 1, unit: "serving",
+    cal: Math.round(cal), protein: r1n(pro || 0), aliases: [], src: "off", code: p.code || "" };
+}
+async function offSearch(q) {
+  const code = q.replace(/[\s-]/g, ""), isCode = /^\d{8,14}$/.test(code);
+  const url = isCode ? `https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`
+    : `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=15&fields=${OFF_FIELDS}`;
+  const r = await fetch(url);
+  if (!r.ok && !(isCode && r.status === 404)) throw new Error("Open Food Facts returned " + r.status);
+  const d = await r.json();
+  return (isCode ? (d.product ? [d.product] : []) : d.products || []).map(offFood).filter(Boolean);
+}
+// The meal being entered, kept outside the DOM so re-renders don't lose it
+const newDraft = () => { const n = new Date(); return { date: today(), time: `${pad(n.getHours())}:${pad(n.getMinutes())}`, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "" }; };
+let draft = newDraft();
+let mealFormOpen = null; // remembers whether you left "Log a meal" open
+const draftTotals = () => ({ cal: draft.rows.reduce((a, r) => a + (r.cal || 0), 0), protein: r1n(draft.rows.reduce((a, r) => a + (r.protein || 0), 0)) });
+const foodOptions = sel => [...db.foods].sort((a, b) => a.name.localeCompare(b.name)).map(f => `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc(f.name)} — ${esc(f.serving)}</option>`).join("");
+function draftHtml() {
+  const tot = draftTotals(), bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
+  return draft.rows.map((r, i) => {
+    const f = foodById(r.foodId), ok = f || r.custom;
+    return `<div class="frow ${ok ? "" : "unmatched"}">
+      <div class="frow-top">${ok ? '<span class="tag">Estimated</span>' : '<span class="st warn"><i>!</i>No match — pick a food</span>'}
+        <span class="faint grow" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">“${esc(r.text)}”</span>
+        <button type="button" class="x" data-act="rmRow" data-i="${i}" aria-label="Remove">×</button></div>
+      <label>Food<select data-row="${i}" data-f="foodId">${r.custom ? `<option value="" selected>${esc(r.name)} (saved values)</option>` : '<option value="">— pick a food —</option>'}${foodOptions(r.foodId)}</select></label>
+      <div class="row tight">
+        <label>Servings${f ? ` <span class="faint">× ${esc(f.serving)}</span>` : ""}<input type="number" step="any" min="0" inputmode="decimal" data-row="${i}" data-f="servings" value="${r.servings ?? ""}"></label>
+        <label>Calories<input type="number" step="any" min="0" inputmode="numeric" data-row="${i}" data-f="cal" value="${r.cal ?? ""}"></label>
+        <label>Protein g<input type="number" step="any" min="0" inputmode="decimal" data-row="${i}" data-f="protein" value="${r.protein ?? ""}"></label>
+      </div></div>`; }).join("")
+    + (draft.rows.length ? `<div class="ftotal" id="draftTotal">Estimated total: <b class="n" style="font-size:20px">${tot.cal} cal</b> · <b class="n" style="font-size:20px">${tot.protein} g protein</b>
+        ${bad ? `<div style="color:var(--warn);margin-top:4px">${bad} item${bad === 1 ? "" : "s"} not matched yet.</div>` : ""}</div>
+      <label>Save as one of My Foods (optional)<input data-draft="presetName" value="${esc(draft.presetName)}" placeholder="e.g. Usual breakfast"></label>` : "");
+}
+function offHtml() {
+  if (draft.searching) return `<p class="faint">Searching Open Food Facts…</p>`;
+  if (!draft.results) return "";
+  if (typeof draft.results === "string") return `<p class="faint" style="color:var(--warn)">${esc(draft.results)}</p>`;
+  if (!draft.results.length) return `<p class="faint">No products with calorie info found. Try different words or the barcode number.</p>`;
+  return `<ul class="list">${draft.results.map((f, i) => `<li><div class="grow"><b>${esc(f.name)}</b><div class="faint">per ${esc(f.serving)}: ${f.cal} cal · ${f.protein} g protein</div></div>
+    <button type="button" class="btn secondary small" data-act="offPick" data-i="${i}">Add</button></li>`).join("")}</ul>
+    <p class="faint">Label values from Open Food Facts (community data) — check them against your package.</p>`;
+}
+const refreshDraft = () => { const d = $("#draft"); if (d) d.innerHTML = draftHtml(); const o = $("#offResults"); if (o) o.innerHTML = offHtml(); };
+function updateDraftTotal() {
+  const el = $("#draftTotal"); if (!el) return;
+  const tot = draftTotals(); el.querySelectorAll("b")[0].textContent = tot.cal + " cal"; el.querySelectorAll("b")[1].textContent = tot.protein + " g protein";
+}
+function draftInput(el) {
+  if (el.dataset.draft) { draft[el.dataset.draft] = el.type === "checkbox" ? el.checked : el.value; return true; }
+  if (el.dataset.row == null) return false;
+  const r = draft.rows[+el.dataset.row], f = el.dataset.f; if (!r) return true;
+  if (f === "foodId") {
+    if (!el.value) return true;
+    r.foodId = el.value; r.custom = false; if (!(r.servings > 0)) r.servings = 1; calcRow(r); refreshDraft(); return true;
+  }
+  r[f] = num(el.value);
+  if (f === "servings" && r.foodId) {
+    calcRow(r);
+    const box = el.closest(".frow"); box.querySelector("[data-f=cal]").value = r.cal; box.querySelector("[data-f=protein]").value = r.protein;
+  }
+  updateDraftTotal(); return true;
+}
+function saveMeal() {
+  const bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
+  if (bad) { alert(`Pick a food for the ${bad} flagged item${bad === 1 ? "" : "s"}, or remove ${bad === 1 ? "it" : "them"}.`); return false; }
+  if (!draft.rows.length && !draft.text.trim()) { alert("Describe what you ate, or add some foods."); return false; }
+  const items = draft.rows.map(r => { const f = foodById(r.foodId); return { foodId: r.foodId, name: f ? f.name : r.name, servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }; });
+  const tot = draftTotals();
+  db.meals.push({ id: uid(), date: draft.date || today(), time: draft.time || "12:00", text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
+    items, cal: items.length ? tot.cal : null, protein: items.length ? tot.protein : null, est: true });
+  const pn = draft.presetName.trim();
+  if (pn && items.length) {
+    const ex = db.presets.find(x => exKey(x.name) === exKey(pn));
+    if (ex) ex.items = items; else db.presets.push({ id: uid(), name: pn, items });
+  }
+  save(); draft = newDraft();
+  toast(pn && items.length ? `Meal saved · “${pn}” added to My Foods` : items.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved");
+}
+// Calories out: resting burn (Mifflin-St Jeor × 1.2, or your own number) + logged exercise
+const CARDIO_MET = { "Incline walk": 6, "Peloton ride": 7 };
+const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWeight; };
+function baseBurn() {
+  const s = db.settings, lb = bodyLb(), kg = lb / 2.2046;
+  if (s.burnOverride) return { cal: s.burnOverride, how: "your number from Settings" };
+  if (s.heightIn && s.age) return { cal: Math.round((10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + 5) * 1.2), how: "Mifflin-St Jeor formula, lightly active day" };
+  return { cal: Math.round(lb * 11), how: "rough estimate — add your height and age in Settings for a better one" };
+}
+function exerciseBurn(date) {
+  const kg = bodyLb() / 2.2046, kcal = (met, min) => (met - 1) * kg * (min || 0) / 60;
+  return Math.round(db.cardio.filter(c => c.date === date).reduce((a, c) => a + kcal(CARDIO_MET[c.type] || 5, c.min), 0)
+    + db.strength.filter(x => x.date === date).reduce((a, x) => a + kcal(5, x.min), 0));
+}
+function dayEnergy(date) {
+  const ms = db.meals.filter(m => m.date === date), withCal = ms.filter(m => m.cal != null);
+  const ex = exerciseBurn(date), base = baseBurn().cal;
+  return { in: withCal.reduce((a, m) => a + m.cal, 0), protein: r1n(withCal.reduce((a, m) => a + (m.protein || 0), 0)),
+    n: withCal.length, missing: ms.length - withCal.length, ex, out: base + ex };
+}
+
+// =====================================================================
 // Fast & food tab
 // =====================================================================
+function energyCard() {
+  const s = db.settings, t = today(), e = dayEnergy(t), net = e.in - e.out, bb = baseBurn();
+  const days = [...Array(7)].map((_, i) => addDays(t, -i)).map(d => ({ d, ...dayEnergy(d) })).filter(x => x.n);
+  return `<div class="card"><h2>Calories in vs out <small>today</small></h2>
+    <div class="grid2" style="margin:0">
+      <div><div class="faint">In (food)</div><div class="n" style="font-size:34px;font-weight:800">${e.in}</div></div>
+      <div><div class="faint">Out (estimated)</div><div class="n" style="font-size:34px;font-weight:800">${e.out}</div><div class="faint">${bb.cal} resting${e.ex ? ` + ${e.ex} exercise` : ""}</div></div>
+    </div>
+    <p class="muted" style="margin:10px 0">${e.n ? `${net <= 0 ? `<b style="color:var(--good)">${-net} cal under</b>` : `<b style="color:var(--warn)">${net} cal over</b>`} so far today` : "Log a meal with the estimator to start counting."}
+      ${e.missing ? `<br><span class="faint">${e.missing} meal${e.missing === 1 ? " has" : "s have"} no calorie estimate (edit ${e.missing === 1 ? "it" : "them"} to add one).</span>` : ""}</p>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><b>Protein</b><span class="n" style="font-size:22px;font-weight:700">${e.protein}<span class="faint" style="font-family:Barlow;font-size:14px"> / ${s.proteinTarget} g</span></span></div>
+    <div class="bar ${e.protein >= s.proteinTarget ? "good" : ""}" style="margin:6px 0 4px"><span style="width:${Math.min(100, e.protein / s.proteinTarget * 100)}%"></span></div>
+    ${days.length > 1 ? `<table style="margin-top:12px"><thead><tr><th>Day</th><th>In</th><th>Out</th><th>Net</th><th>Protein</th></tr></thead><tbody>
+      ${days.map(x => `<tr><td>${fmtDay(x.d)}</td><td class="v">${x.in}</td><td class="v">${x.out}</td><td class="v ${x.in - x.out <= 0 ? "down" : "up"}">${x.in - x.out > 0 ? "+" : "−"}${Math.abs(x.in - x.out)}</td><td class="v">${x.protein}</td></tr>`).join("")}</tbody></table>` : ""}
+    <p class="faint" style="margin:8px 0 0">All numbers are estimates. "Out" = resting burn (${esc(bb.how)}) plus logged cardio and strength minutes.</p>
+  </div>`;
+}
 function viewFood() {
   const s = db.settings, now = Date.now(), t = today();
   const active = db.fasts.find(f => !f.end);
@@ -1183,7 +1463,8 @@ function viewFood() {
     const dur = new Date(f.end) - new Date(f.start), hit = dur >= s.fastTarget * 36e5;
     return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
       <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}${rowBtns("fasts", f.id)}</li>`; };
-  const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate ? 92 : 66}px;flex:none">${withDate ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}</div>${rowBtns("meals", m.id)}</li>`;
+  const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate ? 92 : 66}px;flex:none">${withDate ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}
+    ${m.cal != null ? `<div class="faint">${m.cal} cal · ${m.protein || 0} g protein${m.est ? " · estimated" : ""}</div>` : ""}</div>${rowBtns("meals", m.id)}</li>`;
   const avgFast = recentFasts.length ? recentFasts.reduce((a, f) => a + (new Date(f.end) - new Date(f.start)), 0) / recentFasts.length : null;
   const upcoming = db.cheats.filter(c => !c.done).sort((a, b) => a.date.localeCompare(b.date));
   const pastCheats = db.cheats.filter(c => c.done).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
@@ -1191,23 +1472,44 @@ function viewFood() {
   const recentMeals = meals.filter(m => m.date >= addDays(t, -6)), olderMeals = meals.filter(m => m.date < addDays(t, -6));
   const byDay = {};
   recentMeals.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
-  const nowT = new Date(), hm = `${pad(nowT.getHours())}:${pad(nowT.getMinutes())}`;
   return `${fastCard}
   <div class="card"><h2>Recent fasts <small>${avgFast ? "avg " + fmtDur(avgFast) : ""}</small></h2>
     ${done.length ? moreList(done, 7, fastRow) : `<p class="faint">Completed fasts show up here.</p>`}
   </div>
+  ${energyCard()}
   <div class="card"><h2>Meals</h2>
-    <details ${meals.length ? "" : "open"}><summary>Log a meal</summary>
+    <details id="mealForm" ${mealFormOpen ?? !meals.length ? "open" : ""}><summary>Log a meal</summary>
       <form data-form="meal">
-        <div class="row"><label>Date<input type="date" name="date" value="${t}" required></label><label>Time<input type="time" name="time" value="${hm}" required></label></div>
-        <label>What did you eat?<textarea name="text" rows="2" placeholder="e.g. Grilled chicken, rice, salad" required></textarea></label>
-        <label class="check"><input type="checkbox" name="cheat">This was a cheat meal</label>
+        <div class="row"><label>Date<input type="date" data-draft="date" value="${esc(draft.date)}" required></label><label>Time<input type="time" data-draft="time" value="${esc(draft.time)}" required></label></div>
+        <label>What did you eat?<textarea data-draft="text" rows="2" placeholder="e.g. 2 sweet potatoes, 7 meatballs, 1 tbsp peanut butter">${esc(draft.text)}</textarea></label>
+        <button type="button" class="btn secondary block" data-act="estimate">Estimate calories &amp; protein</button>
+        ${db.presets.length ? `<p class="faint" style="margin:14px 0 6px">My Foods — tap to add</p><div class="chips">${db.presets.map(p => `<button type="button" class="chip" data-act="addPreset" data-id="${esc(p.id)}">${esc(p.name)}</button>`).join("")}</div>` : ""}
+        <details id="offBox" style="margin-top:12px" ${draft.q || draft.results ? "open" : ""}><summary>Branded product (Open Food Facts)</summary>
+          <div class="row"><label style="flex:3 1 160px">Product name or barcode<input data-draft="q" value="${esc(draft.q)}" placeholder="e.g. fairlife core power" enterkeyhint="search"></label>
+            <button type="button" class="btn secondary small" data-act="offSearch" style="align-self:center;margin-top:8px">Search</button></div>
+          <div id="offResults">${offHtml()}</div></details>
+        <div id="draft">${draftHtml()}</div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" data-draft="cheat"${draft.cheat ? " checked" : ""}>This was a cheat meal</label>
         <button class="btn block" style="margin-top:10px">Save meal</button>
+        <button type="button" class="btn ghost block small" style="margin-top:8px" data-act="clearDraft">Clear</button>
       </form></details>
     ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => `<p class="faint" style="margin:16px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${fmtDay(d)}</p><ul class="list">${ms.map(m => mealRow(m)).join("")}</ul>`).join("")
       : `<p class="faint">No meals logged in the last 7 days.</p>`}
     ${olderMeals.length ? `<details style="margin-top:12px"><summary>Earlier meals (${olderMeals.length})</summary><ul class="list">${olderMeals.map(m => mealRow(m, true)).join("")}</ul></details>` : ""}
   </div>
+  <div class="card"><h2>My Foods <small>saved meals &amp; combos</small></h2>
+    ${db.presets.length ? `<ul class="list">${db.presets.map(p => { const c = p.items.reduce((a, i) => a + i.cal, 0), pr = r1n(p.items.reduce((a, i) => a + i.protein, 0));
+      return `<li><div class="grow"><b>${esc(p.name)}</b><div class="faint">${esc(p.items.map(i => i.name).join(", "))}</div><div class="faint">${c} cal · ${pr} g protein</div></div>
+        <button class="btn secondary small" data-act="addPreset" data-id="${esc(p.id)}">Log</button>${rowBtns("presets", p.id)}</li>`; }).join("")}</ul>`
+      : `<p class="faint" style="margin:0">After estimating a meal, give it a name before saving to keep it here. You can also type its name in the meal box, like “2 usual breakfast”.</p>`}
+  </div>
+  <div class="card"><details id="foodTable"><summary>Food table (${db.foods.length} foods)</summary>
+    <p class="faint" style="margin-top:0">What the meal box matches against. Synonyms help it recognize other words for the same food; plurals work automatically.</p>
+    <ul class="list">${[...db.foods].sort((a, b) => a.name.localeCompare(b.name)).map(f => `<li><div class="grow"><b>${esc(f.name)}</b> ${f.src === "off" ? '<span class="tag">Label</span>' : ""}
+      <div class="faint">${esc(f.serving)} · ${f.cal} cal · ${f.protein} g protein${f.aliases && f.aliases.length ? ` · also “${esc(f.aliases.join("”, “"))}”` : ""}</div></div>${rowBtns("foods", f.id)}</li>`).join("")}</ul>
+    <details id="addFood" style="margin-top:12px"><summary>Add a food</summary>
+      <form data-form="add" data-k="foods">${specFields("foods", { amt: 1, unit: "each" })}<button class="btn block">Add food</button></form></details>
+  </details></div>
   <div class="card"><h2>Cheat meal planner</h2>
     <p class="faint" style="margin-top:0">Plan them ahead so they're a choice, not a slip.</p>
     ${upcoming.length ? `<ul class="list">${upcoming.map(c => `<li><div class="grow"><div><b>${fmtDay(c.date)}</b> ${c.date < t ? '<span class="tag red">overdue</span>' : ""}</div><div class="muted">${esc(c.text)}</div></div>
@@ -1457,7 +1759,13 @@ function viewSettings() {
       </div>
       <div class="row">
         <label>Fast goal (hours)<input type="number" name="fastTarget" min="8" max="72" value="${s.fastTarget}" inputmode="numeric"></label>
+        <label>Protein goal (g / day)<input type="number" name="proteinTarget" min="10" value="${s.proteinTarget}" inputmode="numeric"></label>
       </div>
+      <div class="row">
+        <label>Age (for calorie burn)<input type="number" name="age" min="10" max="110" value="${s.age ?? ""}" inputmode="numeric" placeholder="optional"></label>
+        <label>Daily burn override (cal)<input type="number" name="burnOverride" min="800" max="6000" value="${s.burnOverride ?? ""}" inputmode="numeric" placeholder="auto"></label>
+      </div>
+      <p class="faint" style="margin-top:-4px">Resting burn is estimated from your weight, height and age (male formula) unless you enter your own daily number; logged exercise is added on top.</p>
       <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>PT has cleared my shoulders for upper-body work</label>
       <button class="btn block" style="margin-top:12px">Save settings</button>
     </form>
@@ -1496,7 +1804,7 @@ const forms = {
     if (e.bmi == null && bmiFor(w) != null) e.bmi = Math.round(bmiFor(w) * 10) / 10;
     upsertWeight(e); toast("Weigh-in saved");
   },
-  meal(f) { db.meals.push({ id: uid(), date: f.get("date"), time: f.get("time"), text: f.get("text").trim(), cheat: !!f.get("cheat") }); save(); toast("Meal saved"); },
+  meal: () => saveMeal(),
   cheat(f) { db.cheats.push({ id: uid(), date: f.get("date"), text: f.get("text").trim(), done: false }); save(); toast("Cheat meal planned"); },
   fast(f) {
     const start = new Date(f.get("start")), endV = f.get("end");
@@ -1537,7 +1845,8 @@ const forms = {
     s.startDate = f.get("startDate") || s.startDate;
     const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50);
     if (goals.length) s.goals = [...new Set(goals)].sort((a, b) => b - a);
-    for (const k of ["cardioTarget", "strengthTarget", "fastTarget"]) { const v = num(f.get(k)); if (v) s[k] = v; }
+    for (const k of ["cardioTarget", "strengthTarget", "fastTarget", "proteinTarget"]) { const v = num(f.get(k)); if (v) s[k] = v; }
+    for (const k of ["age", "burnOverride"]) s[k] = num(f.get(k)) || null;
     const cleared = !!f.get("shouldersCleared");
     if (cleared && !s.shouldersCleared) s.clearedDate = today();
     s.shouldersCleared = cleared;
@@ -1554,6 +1863,7 @@ document.addEventListener("submit", e => {
 const syncExList = el => { const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
   syncExList(e.target);
+  if (draftInput(e.target)) return;
   if (e.target.name === "name" && e.target.closest("form[data-form=lab]")) {
     const t = findTest(e.target.value), u = e.target.form.elements.unit;
     if (t && !u.value) u.value = t.unit;
@@ -1561,6 +1871,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   syncExList(e.target);
+  if (e.target.type === "checkbox" && e.target.dataset.draft) { draftInput(e.target); return; }
   if (e.target.dataset.act !== "import") return;
   const file = e.target.files[0]; if (!file) return;
   file.text().then(txt => {
@@ -1569,6 +1880,10 @@ document.addEventListener("change", e => {
     if (!confirm("Replace everything on this device with the backup file?")) return;
     localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); render(); toast("Backup restored");
   }).catch(err => alert("Couldn't read that file: " + err.message));
+});
+document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealFormOpen = e.target.open; }, true);
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.dataset && e.target.dataset.draft === "q") { e.preventDefault(); $("[data-act=offSearch]").click(); }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
@@ -1580,6 +1895,39 @@ document.addEventListener("click", e => {
   if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; go(el.dataset.go, el.dataset.focus); return; }
   if (act === "wview") { wView = el.dataset.v; render(); return; }
   if (act === "fview") { fView = el.dataset.v; render(); return; }
+  if (act === "estimate") {
+    if (!draft.text.trim()) { toast("Type what you ate first"); return; }
+    // keep rows you already fixed up when their text hasn't changed
+    const prev = draft.rows.filter(r => r.src === "text");
+    draft.rows = draft.rows.filter(r => r.src !== "text").concat(parseMeal(draft.text).map(r => {
+      const i = prev.findIndex(p => p.text === r.text); return i >= 0 ? prev.splice(i, 1)[0] : r; }));
+    refreshDraft();
+    const bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
+    if (bad) toast(`${bad} item${bad === 1 ? "" : "s"} need a food picked`);
+    return;
+  }
+  if (act === "rmRow") { draft.rows.splice(+el.dataset.i, 1); refreshDraft(); return; }
+  if (act === "clearDraft") { draft = newDraft(); render(); return; }
+  if (act === "addPreset") {
+    const p = db.presets.find(x => x.id === el.dataset.id); if (!p) return;
+    draft.rows.push(...presetRows(p)); if (!draft.text.trim()) draft.text = p.name;
+    if (current === "food") { render(); $("#draft").scrollIntoView({ block: "center" }); } else go("food", "mealForm");
+    toast(`Added ${p.name} — review and save`); return;
+  }
+  if (act === "offSearch") {
+    const q = draft.q.trim(); if (!q) { toast("Type a product name or barcode"); return; }
+    draft.searching = true; refreshDraft();
+    offSearch(q).then(r => { draft.results = r; }, err => { draft.results = `Couldn't reach Open Food Facts (${err.message}). Check your connection and try again.`; })
+      .finally(() => { draft.searching = false; refreshDraft(); });
+    return;
+  }
+  if (act === "offPick") {
+    const f = draft.results && draft.results[+el.dataset.i]; if (!f) return;
+    let food = db.foods.find(x => x.src === "off" && f.code && x.code === f.code);
+    if (!food) { food = { id: uid(), ...f }; db.foods.push(food); save(); }
+    draft.rows.push(calcRow({ text: food.name, src: "off", foodId: food.id, servings: 1 }));
+    refreshDraft(); toast("Added — adjust servings if needed"); return;
+  }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
   if (act === "closeSheet") { if (editing) editing = null; else openLab = null; renderSheet(); return; }
