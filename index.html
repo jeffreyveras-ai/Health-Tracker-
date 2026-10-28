@@ -243,6 +243,10 @@ nav.tabs button.on svg { color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 .chip.on { background: var(--accent); color: #fff; }
+.kcalbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.kcalbar > div { background: rgba(255,255,255,.05); border-radius: 12px; padding: 10px 12px; }
+.kcalbar span { display: block; } .kcalbar span + b { font-size: 26px; font-weight: 800; } .kcalbar b + span { display: inline; }
+label[hidden] { display: none !important; }
 .foldable > h2 { cursor: pointer; user-select: none; -webkit-user-select: none; }
 .foldable > h2 .ct { display: inline-flex; align-items: center; gap: 8px; }
 .foldable > h2 .chev { width: 12px; height: 12px; color: var(--ink-3); transition: transform .2s; transform: rotate(90deg); flex: none; }
@@ -486,7 +490,37 @@ function upsertWeight(entry) {
 // Apple Health sync via link (from the iPhone Shortcut)
 // =====================================================================
 // Imports w (lb), bf (%), bmi, lean, mm (muscle lb), d (date), t (type). Empty or junk values are skipped.
+// Workout fields: wt (type), wm (minutes), wc (calories), whr (average heart rate). Empty values are skipped.
+function healthWorkoutType(t) {
+  const x = String(t || "").toLowerCase();
+  const rules = [[/hiit|high.?intensity|interval/, "HIIT"], [/stair/, "StairMaster"], [/hik/, "Hiking"], [/walk/, "Walk (outdoor)"], [/run|jog/, "Running / jogging"],
+    [/indoor.*(cycl|bik)|(cycl|bik).*indoor|spin|peloton/, "Peloton / indoor bike"], [/cycl|bik/, "Outdoor cycling"], [/ellip/, "Elliptical"], [/row/, "Rowing"], [/swim/, "Swimming"],
+    [/golf/, "Golf (walking the course)"], [/step/, "Step aerobics"], [/dance|zumba/, "Dance cardio"], [/box|kick|martial/, "Boxing / kickboxing"], [/jump|rope/, "Jump rope"],
+    [/functional|cross.?train|circuit|core|strength/, "Bodyweight circuit"]];
+  const hit = rules.find(([re]) => re.test(x));
+  return hit ? hit[1] : "Custom";
+}
+function importWorkout(p, date) {
+  const raw = k => String(p.get(k) ?? "").trim(), get = k => raw(k) === "" ? null : num(raw(k));
+  const wt = raw("wt"), wm = get("wm"), wc = get("wc"), whr = get("whr");
+  if (!wt && wm == null && wc == null && whr == null) return null;
+  if (wm == null || wm <= 0) return "Workout skipped (no minutes in the link)";
+  const type = healthWorkoutType(wt), e = { date, type, min: Math.round(wm), src: "health", intensity: "moderate" };
+  if (type === "Custom" && wt) e.name = wt;
+  if (wc != null && wc > 0 && wc < 5000) e.kcal = Math.round(wc);
+  if (whr != null && whr >= 40 && whr <= 220) e.hr = Math.round(whr);
+  const dup = db.cardio.find(c => c.src === "health" && c.date === date && actFor(c.type).name === type && c.min === e.min);
+  if (dup) Object.assign(dup, e); else db.cardio.push({ id: uid(), ...e });
+  db.settings.lastSync = new Date().toISOString(); save();
+  return `${dup ? "Updated" : "Added"} ${e.name || type} · ${e.min} min${e.kcal ? ` · ${e.kcal} cal` : ""}${e.hr ? ` · ♥ ${e.hr}` : ""}`;
+}
 function importSync(p) {
+  const dm0 = (p.get("d") || "").match(/\d{4}-\d{2}-\d{2}/), date0 = dm0 ? dm0[0] : today();
+  const hasBody = ["w", "bf", "bmi", "lean", "mm"].some(k => num(p.get(k)) != null);
+  const msgs = [hasBody ? importBody(p) : null, importWorkout(p, date0)].filter(Boolean);
+  return msgs.length ? msgs.join(" · ") : "The link had no values to import";
+}
+function importBody(p) {
   const get = k => num(p.get(k));
   let w = get("w"), bf = get("bf");
   if (bf != null && bf > 0 && bf < 1) bf = bf * 100; // Health sometimes gives 0.241 for 24.1%
@@ -512,7 +546,7 @@ function importSync(p) {
 }
 function handleSyncLink() {
   const p = new URLSearchParams(location.search);
-  if (!p.has("w")) return;
+  if (!["w", "wt", "wm"].some(k => p.has(k))) return;
   history.replaceState(null, "", location.pathname + location.hash);
   const msg = importSync(p);
   setTimeout(() => toast(msg), 300);
@@ -521,10 +555,14 @@ async function exportBackup() {
   const name = `momentum-backup-${today()}.json`;
   const json = JSON.stringify({ ...db, exportedAt: new Date().toISOString() }, null, 2);
   const done = () => { db.settings.lastBackup = new Date().toISOString(); save(); render(); toast("Backup saved"); };
-  try {
-    const file = new File([json], name, { type: "application/json" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Momentum backup" }); done(); return; }
-  } catch (err) { if (err && err.name === "AbortError") return; }
+  // iPhone's share sheet won't take application/json files, so share it as plain text (the .json name is kept)
+  if (navigator.share) {
+    const file = new File([json], name, { type: "text/plain" });
+    if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Momentum backup" }); done(); return; }
+      catch (err) { if (err && err.name === "AbortError") return; }
+    }
+  }
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([json], { type: "application/json" })); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   done();
@@ -533,10 +571,11 @@ async function exportBackup() {
 async function clipboardSync() {
   let text = "";
   try { text = await navigator.clipboard.readText(); } catch (e) {}
-  if (!/[?&]w=/.test(text)) text = prompt("Paste the sync link from your Health shortcut (it should contain ?w=…):", "") || "";
+  const ok = t => /[?&](w|wt|wm)=/.test(t);
+  if (!ok(text)) text = prompt("Paste the sync link from your Health shortcut (it should contain ?w=… or ?wt=…):", "") || "";
   if (!text.trim()) return;
-  const q = text.trim().match(/[?&](w=[^\s#]*)/);
-  if (!q) { toast("That doesn't look like a sync link (no ?w=)"); return; }
+  const q = text.trim().match(/\?([^\s#]*)/);
+  if (!q || !ok("?" + q[1])) { toast("That doesn't look like a sync link (no ?w= or ?wt=)"); return; }
   toast(importSync(new URLSearchParams(q[1].replace(/&amp;/g, "&"))));
   render();
 }
@@ -893,7 +932,40 @@ const ORDER = { bad: 0, warn: 1, none: 2, good: 3 };
 // =====================================================================
 // Entries: field specs shared by the add forms and the edit sheet
 // =====================================================================
-const CARDIO_TYPES = ["Incline walk", "Peloton / bike", "StairMaster", "Running", "Elliptical", "Other cardio"];
+// Cardio activities. met = [easy, moderate, hard] from the 2024 Adult Compendium of Physical Activities
+// (2011 edition where noted with *). mode "walk" | "incline" | "run" | "bike" use speed when given.
+const CARDIO_GROUPS = ["Walking & running", "Bikes, machines & water", "Cardio classes / bodyweight"];
+const ACTS = [
+  { name: "Walk (outdoor)", g: 0, mode: "walk", met: [3.0, 3.8, 4.8] },           // 17170, 17190, 17200
+  { name: "Incline walk", g: 0, mode: "incline", met: [5.3, 5.3, 8.0] },          // *uphill 1–5% / 6–15% grade
+  { name: "Running / jogging", g: 0, mode: "run", met: [7.5, 9.3, 11.0], alias: ["Running"] }, // 12020, 12050, 12070
+  { name: "Hiking", g: 0, mode: "fixed", met: [6.0, 6.0, 6.0] },                  // *17080 cross country
+  { name: "Stairs", g: 0, mode: "fixed", met: [4.0, 8.8, 8.8] },                  // *17133 slow, 17134 fast
+  { name: "StairMaster", g: 0, mode: "fixed", met: [9.3, 9.3, 9.3] },             // 02065 stair treadmill
+  { name: "Golf (walking the course)", g: 0, mode: "fixed", met: [4.3, 4.3, 4.3] }, // 15265 carrying clubs
+  { name: "Peloton / indoor bike", g: 1, mode: "bike", met: [5.0, 6.8, 10.3], alias: ["Peloton ride", "Peloton / bike"] }, // 60 W, general, 151–199 W
+  { name: "Outdoor cycling", g: 1, mode: "bike", met: [6.8, 8.0, 10.0] },         // 01020, 01030, 01040
+  { name: "Elliptical", g: 1, mode: "fixed", met: [5.0, 5.0, 5.0] },              // *moderate effort
+  { name: "Rowing", g: 1, mode: "fixed", upper: 1, met: [5.0, 5.0, 7.3] },        // 02071, 02070
+  { name: "Swimming", g: 1, mode: "fixed", upper: 1, met: [5.8, 5.8, 9.8] },      // *freestyle slow / fast
+  { name: "HIIT", g: 2, mode: "fixed", met: [5.0, 7.5, 11.0] },                   // circuit moderate, circuit vigorous, 02214 HIIT vigorous
+  { name: "Bodyweight circuit", g: 2, mode: "fixed", met: [3.5, 6.0, 7.5] },      // circuit light, body-weight circuit, vigorous
+  { name: "Jump rope", g: 2, mode: "fixed", met: [8.8, 11.8, 12.3] },             // *slow, 15551, 15550
+  { name: "Boxing / kickboxing", g: 2, mode: "fixed", upper: 1, met: [5.8, 7.3, 8.5] }, // bag 15110, kickboxing, bag 120 bpm
+  { name: "Dance cardio", g: 2, mode: "fixed", met: [4.8, 6.5, 8.0] },            // low-impact aerobic, Zumba class, high-impact
+  { name: "Step aerobics", g: 2, mode: "fixed", met: [5.5, 7.3, 9.0] },           // 02001 4", 02002 6–8", 02003 10–12"
+  { name: "Burpees", g: 2, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },      // calisthenics moderate/vigorous, 02214
+  { name: "Mountain climbers", g: 2, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },
+  { name: "Custom", g: 2, mode: "fixed", met: [3.0, 4.5, 7.0], alias: ["Other cardio"] } // general light / moderate / vigorous bands
+];
+const actFor = type => ACTS.find(a => a.name === type || (a.alias || []).includes(type)) || ACTS[ACTS.length - 1];
+const CARDIO_TYPES = ACTS.map(a => a.name);
+const INTENSITY = { easy: "Easy", moderate: "Moderate", hard: "Hard" };
+function cardioSelect(v) {
+  const locked = !db.settings.shouldersCleared, cur = v ? actFor(v).name : "Walk (outdoor)";
+  return `<label>Activity<select name="type">${CARDIO_GROUPS.map((g, gi) => `<optgroup label="${g}">${ACTS.filter(a => a.g === gi).map(a =>
+    `<option value="${esc(a.name)}"${a.name === cur ? " selected" : ""}${a.upper && locked && a.name !== cur ? " disabled" : ""}>${esc(a.name)}${a.upper && locked ? " 🔒" : ""}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
+}
 const exKey = s => String(s || "").trim().toLowerCase();
 const nf = n => String(Math.round(n * 10) / 10);
 const fmtSec = x => x >= 60 ? `${Math.floor(x / 60)}:${pad(x % 60)}` : `${x}s`;
@@ -947,8 +1019,24 @@ const SPEC = {
       if (!e.end && db.fasts.some(x => x !== old && !x.end)) return "You already have a fast running.";
     } },
   cardio: { title: "cardio session", added: "Session added",
-    rows: [[F("type", "Activity", "select", { opts: () => CARDIO_TYPES }), F("min", "Minutes", "int", { req: 1, min: 1, max: 600, ph: "30" })], [D()]],
-    check: e => { if (!(e.min >= 1)) return "Enter how many minutes."; } },
+    rows: [[F("type", "Activity", "cardiotype")], [F("name", "What was it?", "text", { show: "custom", ph: "e.g. spin class, tennis" })],
+      [F("min", "Minutes", "int", { req: 1, min: 1, max: 600, ph: "30" }), D()],
+      [F("intensity", "Intensity", "select", { opts: () => INTENSITY, show: "fixed walk incline run bike" })],
+      [F("speed", "Avg speed (mph)", "num", { step: "0.1", min: 0, max: 40, ph: "optional", show: "walk incline run bike" }),
+       F("incline", "Incline (%)", "num", { step: "0.5", min: 0, max: 40, ph: "treadmill", show: "incline run" }),
+       F("where", "Where", "select", { opts: () => ({ outdoor: "Outdoor", treadmill: "Treadmill" }), show: "run" })],
+      [F("hr", "Avg heart rate (bpm)", "int", { min: 40, max: 220, ph: "optional", show: "all" }), F("kcal", "Calories (Apple Health)", "num", { min: 0, step: "1", show: "health" })]],
+    check(e) {
+      const a = actFor(e.type);
+      if (!(e.min >= 1)) return "Enter how many minutes.";
+      if (a.upper && !db.settings.shouldersCleared) return `${a.name} uses your upper body, so it's locked until your PT or doctor clears you.`;
+      if (e.hr != null && (e.hr < 40 || e.hr > 220)) return "Average heart rate should be between 40 and 220 bpm.";
+      if (!["walk", "incline", "run", "bike"].includes(a.mode)) e.speed = null;
+      if (a.mode !== "incline" && a.mode !== "run") e.incline = null;
+      if (a.mode !== "run") e.where = "";
+      if (a.name !== "Custom") e.name = "";
+      if (!e.intensity) e.intensity = "moderate";
+    } },
   core: { title: "core exercise", added: "Core exercise logged",
     rows: [[F("ex", "Exercise", "ex", { req: 1, list: "core" })], [SETS, REPS, F("sec", "Hold (sec)", "int", { min: 1, ph: "planks etc." })], [D()]],
     check(e) {
@@ -1002,13 +1090,22 @@ function fieldHtml(fd, v, vals) {
   }
   if (kind === "textarea") return `<label>${label}<textarea name="${name}" rows="2"${req}${ph}>${esc(v)}</textarea></label>`;
   if (kind === "ex") return `<label>${label}<input name="ex" list="dl-${fd.list || vals.area || "lower"}" value="${esc(v)}" autocomplete="off" placeholder="Pick one or type your own"${req}></label>`;
+  if (kind === "cardiotype") return cardioSelect(v);
   if (kind === "dt") return `<label>${label}<input type="datetime-local" name="${name}" value="${v ? localInput(new Date(v)) : ""}"${req}></label>`;
   const type = kind === "num" || kind === "int" ? "number" : kind;
   const extra = (kind === "num" ? ` step="${fd.step || "any"}" inputmode="decimal"` : kind === "int" ? ` step="1" inputmode="numeric"` : "")
     + (fd.min != null ? ` min="${fd.min}"` : "") + (fd.max != null ? ` max="${fd.max}"` : "") + (fd.maxToday ? ` max="${today()}"` : "");
   return `<label>${label}<input type="${type}" name="${name}" value="${esc(v)}"${extra}${req}${ph}></label>`;
 }
-const specFields = (k, vals) => SPEC[k].rows.map(r => `<div class="row">${r.map(fd => fieldHtml(fd, vals[fd.name], vals)).join("")}</div>`).join("");
+const specFields = (k, vals) => SPEC[k].rows.map(r => `<div class="row">${r.map(fd => { const h = fieldHtml(fd, vals[fd.name], vals); return fd.show ? h.replace("<label", `<label data-show="${fd.show}"`) : h; }).join("")}</div>`).join("");
+// show only the cardio fields that apply to the chosen activity
+function syncCardioForm(form) {
+  if (!form || !form.elements.type || !form.elements.speed) return;
+  const a = actFor(form.elements.type.value), keys = [a.mode, "all"];
+  if (a.name === "Custom") keys.push("custom");
+  if (form.dataset.src === "health") keys.push("health");
+  form.querySelectorAll("[data-show]").forEach(l => { l.hidden = !l.dataset.show.split(" ").some(k => keys.includes(k)); });
+}
 function readSpec(k, f) {
   const o = {};
   for (const fd of SPEC[k].rows.flat()) {
@@ -1025,7 +1122,7 @@ function addEntry(k, f) {
   if (err) { alert(err); return false; }
   coll(k).push({ id: uid(), ...e });
   if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
-  if (k === "cardio") lastAdd.cardioType = e.type;
+  if (k === "cardio") lastAdd.cardioType = actFor(e.type).name;
   save(); toast(SPEC[k].added || "Saved");
 }
 function editSheet() {
@@ -1089,6 +1186,7 @@ function render() {
   $("#view").innerHTML = views[current]();
   for (const [id, open] of was) { const d = document.getElementById(id); if (d) d.open = open; }
   decorateCards($("#view"));
+  syncCardioForm($("#cardioForm"));
   rendered = current;
   renderTabs();
   if (current === "weight") drawWeightCharts();
@@ -1106,7 +1204,7 @@ function go(tab, focus) {
 // First-time setup
 // =====================================================================
 const needsSetup = () => !db.settings.setupDone || !db.settings.startWeight;
-const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,application/json" data-act="import" style="display:none"></label>`;
+const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,.txt,application/json,text/plain" data-act="import" style="display:none"></label>`;
 function viewSetup() {
   const s = db.settings;
   return `<div class="card hero"><h2>Let's set you up</h2>
@@ -1117,6 +1215,15 @@ function viewSetup() {
         <label>Starting weight (lb)<input type="number" name="startWeight" step="0.1" min="50" max="700" inputmode="decimal" value="${s.startWeight ?? ""}" required></label>
         <label>Start date<input type="date" name="startDate" value="${s.startDate || today()}" max="${today()}" required></label>
       </div>
+      <div class="row">
+        <label>Height (ft)<input type="number" name="ft" min="3" max="8" inputmode="numeric" value="${s.heightIn ? Math.floor(s.heightIn / 12) : ""}" placeholder="5"></label>
+        <label>Height (in)<input type="number" name="in" min="0" max="11" inputmode="numeric" value="${s.heightIn ? Math.round(s.heightIn % 12) : ""}" placeholder="10"></label>
+      </div>
+      <div class="row">
+        <label>Age<input type="number" name="age" min="13" max="110" inputmode="numeric" value="${s.age ?? ""}"></label>
+        <label>Sex<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label>
+      </div>
+      <p class="faint" style="margin-top:-4px">Height, age and sex personalize calorie-burn estimates and fitness norms.</p>
       <label>Goal weights (lb, comma separated — the lowest is your final goal)<input name="goals" value="${esc((s.goals || []).join(", "))}" placeholder="e.g. 200, 190, 180" required inputmode="decimal"></label>
       <p class="muted" style="margin:14px 0 6px">Do you have an injury that should lock upper-body exercises (push-ups, presses, rows) until a PT or doctor clears you?</p>
       <div class="seg" role="radiogroup">
@@ -1547,7 +1654,6 @@ function saveMeal() {
   toast(pn && items.length ? `Meal saved · “${pn}” added to My Foods` : items.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved");
 }
 // Calories out: resting burn (Mifflin-St Jeor × 1.2, or your own number) + logged exercise
-const CARDIO_MET = { "Incline walk": 6, "Peloton ride": 7, "Peloton / bike": 7, StairMaster: 9, Running: 9.8, Elliptical: 5 };
 const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWeight; };
 function baseBurn() {
   const s = db.settings, lb = bodyLb(), kg = lb / 2.2046;
@@ -1555,10 +1661,53 @@ function baseBurn() {
   if (s.heightIn && s.age) return { cal: Math.round((10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + 5) * 1.2), how: "Mifflin-St Jeor formula, lightly active day" };
   return { cal: Math.round(lb * 11), how: "rough estimate — add your height and age in Settings for a better one" };
 }
+// Speed → MET, [upper bound (mph, exclusive), MET]. 2024 Compendium; * = 2011 edition or nearest band.
+const WALK_MET = [[2.5, 2.8], [2.8, 3.0], [3.5, 3.8], [4.0, 4.8], [4.5, 5.5], [5.0, 7.0], [Infinity, 8.3]];   // <2.5*, 17170, 17190, 17200, 17220, 17230, 5+*
+const RUN_MET = [[4.3, 6.5], [5.0, 7.5], [5.3, 8.5], [6.0, 9.0], [6.4, 9.3], [7.0, 10.5], [7.5, 11.0], [8.0, 11.8], [8.6, 12.0], [9.0, 12.5], [10.0, 13.0], [Infinity, 14.5]]; // 12028 … 12110, 10+*
+const BIKE_MET = [[10, 4.0], [12, 6.8], [14, 8.0], [16, 10.0], [20, 12.0], [Infinity, 15.8]];                 // <10*, 01020, 01030, 01040, 16+*
+const fromTable = (t, v) => t.find(([max]) => v < max)[1];
+// ACSM metabolic equations for treadmill grade (speed in m/min, grade as a fraction)
+const acsmWalk = (mph, pct) => (3.5 + 0.1 * mph * 26.8224 + 1.8 * mph * 26.8224 * pct / 100) / 3.5;
+const acsmRun = (mph, pct) => (3.5 + 0.2 * mph * 26.8224 + 0.9 * mph * 26.8224 * pct / 100) / 3.5;
+function metFor(c) {
+  const a = actFor(c.type), i = ["easy", "moderate", "hard"].indexOf(c.intensity || "moderate"), byInt = a.met[i < 0 ? 1 : i];
+  const sp = c.speed > 0 ? c.speed : null, inc = c.incline > 0 ? c.incline : 0;
+  if (a.mode === "walk" && sp) return { met: fromTable(WALK_MET, sp), how: `${sp} mph` };
+  if (a.mode === "incline") {
+    if (sp && inc) return { met: acsmWalk(sp, inc), how: `${sp} mph at ${inc}% (ACSM walking equation)` };
+    if (sp) return { met: fromTable(WALK_MET, sp), how: `${sp} mph` };
+    return { met: inc > 5 ? 8.0 : 5.3, how: inc ? `${inc}% incline` : "uphill walking" };
+  }
+  if (a.mode === "run" && sp) return c.where === "treadmill" && inc ? { met: acsmRun(sp, inc), how: `${sp} mph at ${inc}% (ACSM running equation)` } : { met: fromTable(RUN_MET, sp), how: `${sp} mph` };
+  if (a.mode === "bike" && sp) return { met: fromTable(BIKE_MET, sp), how: `${sp} mph` };
+  return { met: byInt, how: new Set(a.met).size === 1 ? "Compendium value" : (c.intensity || "moderate") + " effort" };
+}
+// Resting metabolic rate (Harris-Benedict), used to personalize MET estimates by weight, height, age and sex
+function restingKcalDay() {
+  const s = db.settings, kg = bodyLb() / 2.2046;
+  if (!s.heightIn || !s.age || !kg) return null;
+  const cm = s.heightIn * 2.54;
+  return s.sex === "female" ? 655.0955 + 9.5634 * kg + 1.8496 * cm - 4.6756 * s.age : 66.473 + 13.7516 * kg + 5.0033 * cm - 6.755 * s.age;
+}
+const restPerMin = () => { const r = restingKcalDay(); return r ? r / 1440 : 3.5 * (bodyLb() / 2.2046) / 200; };
+// Calories for one cardio entry: Apple Health number > heart-rate formula > MET estimate
+function cardioCalc(c) {
+  const s = db.settings, kg = bodyLb() / 2.2046, min = c.min || 0;
+  if (c.kcal != null && c.kcal > 0) return { kcal: Math.round(c.kcal), method: "Apple Health", active: true };
+  if (c.hr && s.age && kg) { // Keytel et al. 2005, kJ/min → kcal
+    const kj = s.sex === "female" ? -20.4022 + 0.4472 * c.hr - 0.1263 * kg + 0.074 * s.age : -55.0969 + 0.6309 * c.hr + 0.1988 * kg + 0.2017 * s.age;
+    if (kj > 0) return { kcal: Math.round(kj / 4.184 * min), method: `heart rate (${c.hr} bpm)` };
+  }
+  const m = metFor(c), rmr = restingKcalDay();
+  const perMin = rmr ? m.met * rmr / 1440 : m.met * 3.5 * kg / 200;
+  return { kcal: Math.round(perMin * min), method: `MET ${nf(m.met)} · ${m.how}`, met: m.met, personal: !!rmr };
+}
+// Extra calories above resting, for the daily "Calories out" (Apple Health workout calories are already active-only)
+const cardioNet = c => { const r = cardioCalc(c); return r.active ? r.kcal : Math.max(0, r.kcal - restPerMin() * (c.min || 0)); };
+const cardioKcalSum = (from, to) => db.cardio.filter(c => c.date >= from && c.date <= to).reduce((a, c) => a + cardioCalc(c).kcal, 0);
 function exerciseBurn(date) {
-  const kg = bodyLb() / 2.2046, kcal = (met, min) => (met - 1) * kg * (min || 0) / 60;
-  return Math.round(db.cardio.filter(c => c.date === date).reduce((a, c) => a + kcal(CARDIO_MET[c.type] || 5, c.min), 0)
-    + db.strength.filter(x => x.date === date).reduce((a, x) => a + kcal(5, x.min), 0));
+  return Math.round(db.cardio.filter(c => c.date === date).reduce((a, c) => a + cardioNet(c), 0)
+    + db.strength.filter(x => x.date === date).reduce((a, x) => a + 4 * restPerMin() * (x.min || 0), 0)); // strength ≈ 5 MET, minus rest
 }
 function dayEnergy(date) {
   const ms = db.meals.filter(m => m.date === date), withCal = ms.filter(m => m.cal != null);
@@ -1716,14 +1865,30 @@ function viewFitness() {
 function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
   const thisWeek = newestFirst(db.cardio.filter(c => c.date >= ws)), older = newestFirst(db.cardio.filter(c => c.date < ws));
-  const row = c => `<li><div class="grow">${esc(c.type)}<div class="faint">${fmtDay(c.date)}</div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`;
+  const locked = !s.shouldersCleared, pick = lastAdd.cardioType || "Walk (outdoor)";
+  const row = c => { const a = actFor(c.type), r = cardioCalc(c);
+    const bits = [fmtDay(c.date), c.speed ? `${nf(c.speed)} mph` : "", c.incline ? `${nf(c.incline)}% incline` : "", c.where === "treadmill" ? "treadmill" : "",
+      !c.speed && a.mode !== "incline" && c.intensity ? INTENSITY[c.intensity] : "", c.hr ? `♥ ${c.hr} bpm` : "", c.src === "health" ? "Apple Health" : ""].filter(Boolean);
+    return `<li><div class="grow">${esc(a.name === "Custom" && c.name ? c.name : a.name)}${a.upper ? ' <span class="tag red">Upper</span>' : ""}<div class="faint">${esc(bits.join(" · "))}</div>
+      <div class="faint">≈ ${r.kcal} cal <span style="opacity:.8">· ${esc(r.method)}</span></div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`; };
+  const calToday = cardioKcalSum(t, t), calWeek = cardioKcalSum(ws, addDays(ws, 6));
   return `
   ${weekHero("Cardio this week", sumMin(db.cardio, ws), s.cardioTarget,
-    `<div class="chips" style="margin-top:16px">${CARDIO_TYPES.slice(0, 5).map(x => `<button class="chip${(lastAdd.cardioType || "Incline walk") === x ? " on" : ""}" data-act="cardioPick" data-v="${esc(x)}">${esc(x)}</button>`).join("")}</div>
-    <form data-form="add" data-k="cardio" id="cardioForm">${specFields("cardio", { date: t, type: lastAdd.cardioType || "Incline walk" })}<button class="btn block">Add session</button></form>`,
+    `<div class="kcalbar"><div><span class="faint">Today</span><b class="n">≈ ${calToday}</b><span class="faint"> cal</span></div><div><span class="faint">This week</span><b class="n">≈ ${calWeek}</b><span class="faint"> cal</span></div></div>
+    <p class="faint" style="margin:4px 0 0">Calories burned are estimates.</p>
+    ${CARDIO_GROUPS.map((g, gi) => `<p class="faint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${g}</p>
+      <div class="chips" style="margin-bottom:4px">${ACTS.filter(a => a.g === gi).map(a => { const lk = a.upper && locked;
+        return `<button class="chip${pick === a.name ? " on" : ""}" data-act="cardioPick" data-v="${esc(a.name)}"${lk ? ' disabled title="Upper-body — locked until cleared" style="opacity:.45"' : ""}>${esc(a.name)}${lk ? " 🔒" : ""}</button>`; }).join("")}</div>`).join("")}
+    <form data-form="add" data-k="cardio" id="cardioForm" style="margin-top:10px">${specFields("cardio", { date: t, type: pick, intensity: "moderate", where: "outdoor" })}<button class="btn block">Add session</button>
+      <p class="faint">Add your average speed for walks, runs and rides (and incline on a treadmill) for a closer estimate. Average heart rate, if you have it, is used instead.</p></form>`,
     thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(row).join("")}</ul>` : "")}
   <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>${weekBars(db.cardio, s.cardioTarget)}</div>
-  ${older.length ? `<div class="card"><h2>Earlier sessions</h2>${moreList(older, 10, row)}</div>` : ""}`;
+  ${older.length ? `<div class="card"><h2>Earlier sessions</h2>${moreList(older, 10, row)}</div>` : ""}
+  <div class="card"><h2>How calories are estimated</h2>
+    <p class="muted" style="margin-top:0">Each activity uses a MET value (how many times harder than resting it is) from the <a href="https://pacompendium.com/" target="_blank" rel="noopener">2024 Adult Compendium of Physical Activities</a>. For walking, running and biking the MET is picked by your average speed; for treadmill incline it comes from the ACSM metabolic equations for walking and running.</p>
+    <p class="muted">${restingKcalDay() ? `It's then multiplied by <b>your</b> resting burn (Harris-Benedict, from your weight, height, age and sex: about ${Math.round(restingKcalDay())} cal/day) instead of the textbook average.` : `Add your height, age and sex in Settings to personalize it; until then it uses the standard formula (MET × 3.5 × weight in kg ÷ 200 per minute).`}</p>
+    <p class="muted">With an average heart rate, the heart-rate formula from <a href="https://pubmed.ncbi.nlm.nih.gov/15966347/" target="_blank" rel="noopener">Keytel et al. 2005</a> is used instead (needs your age). Workouts synced from Apple Health with calories use that number. Every entry shows which method it used.</p>
+    <p class="faint">All of these are estimates — real burn varies by fitness, efficiency and terrain.</p></div>`;
 }
 function fitStrength() {
   const s = db.settings, t = today(), ws = weekStart(t), cleared = s.shouldersCleared;
@@ -2331,6 +2496,7 @@ function renderSheet() {
   if (!html) { openLab = null; editing = null; openGuide = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
+  if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
   if (editing || openGuide) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
@@ -2358,6 +2524,7 @@ function viewSettings() {
   <div class="card"><h2>Apple Health sync</h2>
     <p class="muted" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
     <code class="url">${esc(appUrl)}?w=…&amp;bf=…&amp;bmi=…&amp;lean=…&amp;d=…</code>
+    <p class="faint" style="margin-top:-4px">Workouts can ride along (or come on their own): <b>wt</b> = workout type (e.g. Walking, Running, Cycling), <b>wm</b> = minutes, <b>wc</b> = calories, <b>whr</b> = average heart rate. Example: <code>?wt=Walking&amp;wm=42&amp;wc=310&amp;whr=118</code>. Empty values are skipped; a workout with calories uses that number instead of an estimate.</p>
     <div class="btn-row"><button class="btn secondary small" data-act="copyUrl">Copy app address</button>
     <button class="btn ghost small" data-act="testSync">Test with sample data</button></div>
     <p class="faint">${s.lastSync ? "Last sync: " + fmtDT(s.lastSync) : "No syncs yet."}</p>
@@ -2384,7 +2551,7 @@ function viewSettings() {
       </div>
       <div class="row">
         <label>Age (calorie burn &amp; Coach)<input type="number" name="age" min="10" max="110" value="${s.age ?? ""}" inputmode="numeric" placeholder="optional"></label>
-        <label>Fitness norms<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label>
+        <label>Sex (calories &amp; norms)<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label>
         <label>Daily burn override (cal)<input type="number" name="burnOverride" min="800" max="6000" value="${s.burnOverride ?? ""}" inputmode="numeric" placeholder="auto"></label>
       </div>
       <p class="faint" style="margin-top:-4px">Resting burn is estimated from your weight, height and age (male formula) unless you enter your own daily number; logged exercise is added on top.</p>
@@ -2454,6 +2621,10 @@ const forms = {
     if (sw == null || sw < 50 || sw > 700) { alert("Enter your starting weight in pounds."); return false; }
     if (!goals.length) { alert("Enter at least one goal weight in pounds."); return false; }
     s.name = String(f.get("name") || "").trim(); s.startWeight = sw; s.startDate = f.get("startDate") || today();
+    const ft = num(f.get("ft")), inch = num(f.get("in"));
+    if (ft) s.heightIn = ft * 12 + (inch || 0);
+    if (num(f.get("age"))) s.age = num(f.get("age"));
+    s.sex = f.get("sex") === "female" ? "female" : "male";
     s.goals = [...new Set(goals)].sort((a, b) => b - a);
     s.shouldersCleared = f.get("injury") !== "yes";
     if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: sw, type: "other", note: "Starting weight", src: "manual" });
@@ -2497,7 +2668,7 @@ document.addEventListener("submit", e => {
   const ok = form.dataset.form === "add" ? addEntry(form.dataset.k, fd) : forms[form.dataset.form](fd);
   if (ok !== false) render();
 });
-const syncExList = el => { const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
+const syncExList = el => { if (el.name === "type" && el.form) syncCardioForm(el.form); const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
   syncExList(e.target);
   if (draftInput(e.target)) return;
@@ -2584,7 +2755,7 @@ document.addEventListener("click", e => {
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "closeRecap") { const r = $("#recap"); if (r) { r.classList.remove("show"); setTimeout(() => r.remove(), 250); } return; }
   if (act === "recap") { showRecap(el.dataset.d); return; }
-  if (act === "cardioPick") { lastAdd.cardioType = el.dataset.v; const sel = $("#cardioForm [name=type]"); if (sel) sel.value = el.dataset.v; document.querySelectorAll("[data-act=cardioPick]").forEach(b => b.classList.toggle("on", b === el)); return; }
+  if (act === "cardioPick") { lastAdd.cardioType = el.dataset.v; const sel = $("#cardioForm [name=type]"); if (sel) sel.value = el.dataset.v; syncCardioForm($("#cardioForm")); document.querySelectorAll("[data-act=cardioPick]").forEach(b => b.classList.toggle("on", b === el)); return; }
   if (act === "del") {
     if (!confirm("Delete this entry?")) return;
     setColl(el.dataset.k, coll(el.dataset.k).filter(x => String(x.id) !== el.dataset.id));
