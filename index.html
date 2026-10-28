@@ -243,6 +243,12 @@ nav.tabs button.on svg { color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 .chip.on { background: var(--accent); color: #fff; }
+.pick-list { display: grid; gap: 8px; }
+.comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; padding: 0; cursor: pointer; }
+.pick { display: grid; grid-template-columns: 1fr auto; align-items: center; text-align: left; border: 0; border-radius: 14px; background: var(--card-2); color: var(--ink); font: inherit; font-weight: 700; font-size: 17px; padding: 14px 16px; min-height: 56px; cursor: pointer; }
+.pick small { grid-column: 1; font-weight: 500; font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.pick span { grid-column: 2; grid-row: 1 / span 2; color: var(--ink-3); font-size: 22px; }
+.pick:disabled { opacity: .45; cursor: default; }
 #scanner { position: fixed; inset: 0; z-index: 45; background: #000; display: flex; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
 #scanner .scan-top { display: flex; justify-content: space-between; align-items: center; font-size: 18px; margin-bottom: 10px; }
 #scanner .scan-view { position: relative; flex: 1; min-height: 0; border-radius: 16px; overflow: hidden; background: #111; }
@@ -325,6 +331,7 @@ const DEFAULTS = {
     shouldersCleared: true, clearedDate: null, lastBackup: null, lastSync: null
   },
   weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: [],
+  comp: [],    // body fat % / BMI entered by hand: {id, date, bf, bmi, note}
   body: [],    // scale-only measurements (e.g. Renpho): {id, date, muscle, skeletal, ffm, visceral, subq, water, protein, bone, metage}
   foods: [],   // food table: {id, name, serving, amt, unit, cal, protein, aliases, src}
   presets: []  // My Foods: {id, name, items:[{foodId, name, servings, cal, protein}]}
@@ -950,7 +957,7 @@ const ORDER = { bad: 0, warn: 1, none: 2, good: 3 };
 // =====================================================================
 // Cardio activities. met = [easy, moderate, hard] from the 2024 Adult Compendium of Physical Activities
 // (2011 edition where noted with *). mode "walk" | "incline" | "run" | "bike" use speed when given.
-const CARDIO_GROUPS = ["Walking & running", "Bikes, machines & water", "Cardio classes / bodyweight"];
+const CARDIO_GROUPS = ["Walking & running", "Bikes & machines", "Water", "Cardio classes"];
 const ACTS = [
   { name: "Walk (outdoor)", g: 0, mode: "walk", met: [3.0, 3.8, 4.8] },           // 17170, 17190, 17200
   { name: "Incline walk", g: 0, mode: "incline", met: [5.3, 5.3, 8.0] },          // *uphill 1–5% / 6–15% grade
@@ -963,16 +970,16 @@ const ACTS = [
   { name: "Outdoor cycling", g: 1, mode: "bike", met: [6.8, 8.0, 10.0] },         // 01020, 01030, 01040
   { name: "Elliptical", g: 1, mode: "fixed", met: [5.0, 5.0, 5.0] },              // *moderate effort
   { name: "Rowing", g: 1, mode: "fixed", upper: 1, met: [5.0, 5.0, 7.3] },        // 02071, 02070
-  { name: "Swimming", g: 1, mode: "fixed", upper: 1, met: [5.8, 5.8, 9.8] },      // *freestyle slow / fast
-  { name: "HIIT", g: 2, mode: "fixed", met: [5.0, 7.5, 11.0] },                   // circuit moderate, circuit vigorous, 02214 HIIT vigorous
-  { name: "Bodyweight circuit", g: 2, mode: "fixed", met: [3.5, 6.0, 7.5] },      // circuit light, body-weight circuit, vigorous
-  { name: "Jump rope", g: 2, mode: "fixed", met: [8.8, 11.8, 12.3] },             // *slow, 15551, 15550
-  { name: "Boxing / kickboxing", g: 2, mode: "fixed", upper: 1, met: [5.8, 7.3, 8.5] }, // bag 15110, kickboxing, bag 120 bpm
-  { name: "Dance cardio", g: 2, mode: "fixed", met: [4.8, 6.5, 8.0] },            // low-impact aerobic, Zumba class, high-impact
-  { name: "Step aerobics", g: 2, mode: "fixed", met: [5.5, 7.3, 9.0] },           // 02001 4", 02002 6–8", 02003 10–12"
-  { name: "Burpees", g: 2, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },      // calisthenics moderate/vigorous, 02214
-  { name: "Mountain climbers", g: 2, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },
-  { name: "Custom", g: 2, mode: "fixed", met: [3.0, 4.5, 7.0], alias: ["Other cardio"] } // general light / moderate / vigorous bands
+  { name: "Swimming", g: 2, mode: "fixed", upper: 1, met: [5.8, 5.8, 9.8] },      // *freestyle slow / fast
+  { name: "HIIT", g: 3, mode: "fixed", met: [5.0, 7.5, 11.0] },                   // circuit moderate, circuit vigorous, 02214 HIIT vigorous
+  { name: "Bodyweight circuit", g: 3, mode: "fixed", met: [3.5, 6.0, 7.5] },      // circuit light, body-weight circuit, vigorous
+  { name: "Jump rope", g: 3, mode: "fixed", met: [8.8, 11.8, 12.3] },             // *slow, 15551, 15550
+  { name: "Boxing / kickboxing", g: 3, mode: "fixed", upper: 1, met: [5.8, 7.3, 8.5] }, // bag 15110, kickboxing, bag 120 bpm
+  { name: "Dance cardio", g: 3, mode: "fixed", met: [4.8, 6.5, 8.0] },            // low-impact aerobic, Zumba class, high-impact
+  { name: "Step aerobics", g: 3, mode: "fixed", met: [5.5, 7.3, 9.0] },           // 02001 4", 02002 6–8", 02003 10–12"
+  { name: "Burpees", g: 3, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },      // calisthenics moderate/vigorous, 02214
+  { name: "Mountain climbers", g: 3, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },
+  { name: "Custom", g: 3, mode: "fixed", met: [3.0, 4.5, 7.0], alias: ["Other cardio"] } // general light / moderate / vigorous bands
 ];
 const actFor = type => ACTS.find(a => a.name === type || (a.alias || []).includes(type)) || ACTS[ACTS.length - 1];
 const CARDIO_TYPES = ACTS.map(a => a.name);
@@ -1018,6 +1025,9 @@ const SPEC = {
       [F("aliases", "Synonyms (comma separated, optional)", "text", { ph: "e.g. pb, peanut butta" })]],
     check(e) { e.aliases = e.aliases.split(",").map(x => x.trim()).filter(Boolean); if (!(e.amt > 0)) e.amt = 1; e.protein = e.protein || 0; } },
   presets: { title: "My Food", rows: [[F("name", "Name", "text", { req: 1 })]] },
+  comp: { title: "body composition", added: "Body composition saved",
+    rows: [[D()], [F("bf", "Body fat (%)", "num", { step: "0.1", min: 2, max: 75 }), F("bmi", "BMI", "num", { step: "0.1", min: 10, max: 90 })], [F("note", "Note", "text", { ph: "optional" })]],
+    check: e => { if (e.bf == null && e.bmi == null) return "Enter body fat %, BMI, or both."; } },
   body: { title: "scale measurements", added: "Measurements saved",
     rows: [[D()], [F("muscle", "Muscle mass (lb)", "num", { step: "0.1", min: 0 }), F("skeletal", "Skeletal muscle (%)", "num", { step: "0.1", min: 0, max: 100 })],
       [F("ffm", "Fat-free mass (lb)", "num", { step: "0.1", min: 0 }), F("bone", "Bone mass (lb)", "num", { step: "0.1", min: 0 })],
@@ -1038,9 +1048,9 @@ const SPEC = {
     rows: [[F("type", "Activity", "cardiotype")], [F("name", "What was it?", "text", { show: "custom", ph: "e.g. spin class, tennis" })],
       [F("min", "Minutes", "int", { req: 1, min: 1, max: 600, ph: "30" }), D()],
       [F("intensity", "Intensity", "select", { opts: () => INTENSITY, show: "fixed walk incline run bike" })],
+      [F("where", "Where", "select", { opts: () => ({ outdoor: "Outdoor", treadmill: "Treadmill" }), show: "run" })],
       [F("speed", "Avg speed (mph)", "num", { step: "0.1", min: 0, max: 40, ph: "optional", show: "walk incline run bike" }),
-       F("incline", "Incline (%)", "num", { step: "0.5", min: 0, max: 40, ph: "treadmill", show: "incline run" }),
-       F("where", "Where", "select", { opts: () => ({ outdoor: "Outdoor", treadmill: "Treadmill" }), show: "run" })],
+       F("incline", "Incline (%)", "num", { step: "0.5", min: 0, max: 40, ph: "e.g. 8", show: "incline treadmill" })],
       [F("hr", "Avg heart rate (bpm)", "int", { min: 40, max: 220, ph: "optional", show: "all" }), F("kcal", "Calories (Apple Health)", "num", { min: 0, step: "1", show: "health" })]],
     check(e) {
       const a = actFor(e.type);
@@ -1048,7 +1058,7 @@ const SPEC = {
       if (a.upper && !db.settings.shouldersCleared) return `${a.name} uses your upper body, so it's locked until your PT or doctor clears you.`;
       if (e.hr != null && (e.hr < 40 || e.hr > 220)) return "Average heart rate should be between 40 and 220 bpm.";
       if (!["walk", "incline", "run", "bike"].includes(a.mode)) e.speed = null;
-      if (a.mode !== "incline" && a.mode !== "run") e.incline = null;
+      if (a.mode !== "incline" && !(a.mode === "run" && e.where === "treadmill")) e.incline = null;
       if (a.mode !== "run") e.where = "";
       if (a.name !== "Custom") e.name = "";
       if (!e.intensity) e.intensity = "moderate";
@@ -1116,9 +1126,10 @@ function fieldHtml(fd, v, vals) {
 const specFields = (k, vals) => SPEC[k].rows.map(r => `<div class="row">${r.map(fd => { const h = fieldHtml(fd, vals[fd.name], vals); return fd.show ? h.replace("<label", `<label data-show="${fd.show}"`) : h; }).join("")}</div>`).join("");
 // show only the cardio fields that apply to the chosen activity
 function syncCardioForm(form) {
-  if (!form || !form.elements.type || !form.elements.speed) return;
+  if (!form || !form.elements || !form.elements.type || !form.elements.speed) return;
   const a = actFor(form.elements.type.value), keys = [a.mode, "all"];
   if (a.name === "Custom") keys.push("custom");
+  if (a.mode === "run" && form.elements.where && form.elements.where.value === "treadmill") keys.push("treadmill");
   if (form.dataset.src === "health") keys.push("health");
   form.querySelectorAll("[data-show]").forEach(l => { l.hidden = !l.dataset.show.split(" ").some(k => keys.includes(k)); });
 }
@@ -1138,7 +1149,7 @@ function addEntry(k, f) {
   if (err) { alert(err); return false; }
   coll(k).push({ id: uid(), ...e });
   if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
-  if (k === "cardio") lastAdd.cardioType = actFor(e.type).name;
+  if (k === "cardio") { lastAdd.cardioType = actFor(e.type).name; logCardio = null; }
   save(); toast(SPEC[k].added || "Saved");
 }
 function editSheet() {
@@ -1173,7 +1184,7 @@ const ICONS = {
   labs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21.5h11.6a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7 15h10"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
 };
-const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Meals"], ["fitness", "Fitness"], ["coach", "Coach"]];
+const TABS = [["home", "Home"], ["weight", "Weight"], ["fitness", "Fitness"], ["food", "Fast & Meals"], ["coach", "Coach"]];
 const TITLES = { home: "Dashboard", settings: "Settings", labs: "Labs & blood work" };
 let current = "home";
 try { current = localStorage.getItem(KEY + ".tab") || "home"; } catch (e) {}
@@ -1316,6 +1327,36 @@ function bodyCard() {
       <div class="faint">${BODY_METRICS.filter(([k]) => x[k] != null).map(([k, l, u]) => `${l} ${fmtM(x[k], u)}`).join(" · ")}${x.note ? " · " + esc(x.note) : ""}</div></div>${rowBtns("body", x.id)}</li>`)}</details>` : ""}
   </div>`;
 }
+// Body composition: body fat % and BMI from weigh-ins (Apple Health or typed) plus hand-entered values
+let cMetric = "bf";
+function compSeries(k) {
+  const pts = [];
+  for (const w of db.weights) if (w[k] != null) pts.push({ date: w.date, v: w[k], src: w.src === "health" ? "health" : "weigh-in" });
+  for (const c of db.comp) if (c[k] != null) pts.push({ date: c.date, v: c[k], src: "manual", id: c.id });
+  return pts.sort((a, b) => a.date.localeCompare(b.date) || (a.src === "manual" ? 1 : -1));
+}
+function compLatest(k) { const p = compSeries(k); const x = p[p.length - 1]; return x ? { date: x.date, [k]: x.v, src: x.src } : null; }
+function compCard(bfE, mmE, leanE, bmi) {
+  const has = compSeries("bf").length || compSeries("bmi").length || mmE || leanE, rows = newestFirst(db.comp), n = compSeries(cMetric).length;
+  const cell = (label, v, sub) => `<div><div class="faint">${label}</div><div class="n" style="font-size:28px;font-weight:800">${v}</div>${sub ? `<div class="faint" style="font-size:12px">${sub}</div>` : ""}</div>`;
+  return `<div class="card"><h2>Body composition <small>latest</small></h2>
+    <button class="comp-grid" data-act="compAdd" aria-label="Add body fat or BMI">
+      ${cell("Body fat", bfE ? nf(bfE.bf) + "%" : "—", bfE ? fmtD(bfE.date) : "")}
+      ${cell("Muscle mass", mmE ? r1(mmE.muscle) + " lb" : "—", "")}
+      ${cell("Lean mass", leanE ? r1(leanE.lean) + " lb" : "—", "")}
+      ${cell("BMI", bmi != null ? r1(bmi) : "—", compLatest("bmi") ? fmtD(compLatest("bmi").date) : bmi != null ? "from height" : "")}
+    </button>
+    ${has ? "" : `<p class="faint" style="margin:10px 0 0">Syncs from Apple Health, or tap to add.</p>`}
+    ${compSeries("bf").length || compSeries("bmi").length ? `<h2 style="margin-top:18px">Trend</h2>
+      <select id="compMetric" aria-label="Measurement to chart" style="margin:0 0 10px"><option value="bf"${cMetric === "bf" ? " selected" : ""}>Body fat %</option><option value="bmi"${cMetric === "bmi" ? " selected" : ""}>BMI</option></select>
+      ${n ? `<div class="chart" id="compChart"></div><div class="legend"><span><i class="lg-dot"></i>Entered / weigh-in</span><span><i class="lg-ring"></i>Apple Health</span></div>` : `<p class="faint">No ${cMetric === "bf" ? "body fat" : "BMI"} readings yet.</p>`}` : ""}
+    <details id="logComp" style="margin-top:14px" ${has ? "" : "open"}><summary>Add body fat % or BMI</summary>
+      <form data-form="add" data-k="comp">${specFields("comp", { date: today() })}<button class="btn block">Save</button></form></details>
+    ${rows.length ? `<details id="compList" style="margin-top:12px"><summary>Entered by hand (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
+      <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns("comp", x.id)}</li>`)}</details>` : ""}
+    <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under All readings.</p>
+  </div>`;
+}
 const backupAgeDays = () => db.settings.lastBackup ? Math.floor((Date.now() - new Date(db.settings.lastBackup)) / 864e5) : null;
 
 // =====================================================================
@@ -1408,7 +1449,7 @@ function viewWeight() {
   const thisW = weekSummary(tw, weekStart(t)), prevW = weekSummary(tw, addDays(weekStart(t), -7));
   const wd = thisW.avg != null && prevW.avg != null ? thisW.avg - prevW.avg : null;
   const comp = k => [...all].reverse().find(w => w[k] != null);
-  const bfE = comp("bf"), mmE = comp("muscle"), leanE = comp("lean"), bmiE = comp("bmi");
+  const bfE = compLatest("bf"), mmE = comp("muscle"), leanE = comp("lean"), bmiE = compLatest("bmi");
   const bmi = bmiE ? bmiE.bmi : last ? bmiFor(last.w) : null;
   // weekly summary rows: newest first, only weeks that have readings
   const weeks = [];
@@ -1451,15 +1492,7 @@ function viewWeight() {
         <div class="bar ${done ? "good" : ""}"><span style="width:${p}%"></span></div></div>`; }).join("")}
     ${last && last.w <= finalG + 2 ? `<p class="muted">Maintenance zone: keep your weekly average between <b>${finalG - 2}</b> and <b>${finalG + 2}</b> lb.</p>` : ""}
   </div>
-  <div class="card"><h2>Body composition <small>latest</small></h2>
-    <div class="grid2" style="margin:0">
-      <div><div class="faint">Body fat</div><div class="n" style="font-size:28px;font-weight:800">${bfE ? r1(bfE.bf) + "%" : "—"}</div></div>
-      <div><div class="faint">Muscle mass</div><div class="n" style="font-size:28px;font-weight:800">${mmE ? r1(mmE.muscle) + " lb" : "—"}</div></div>
-      <div><div class="faint">Lean mass</div><div class="n" style="font-size:28px;font-weight:800">${leanE ? r1(leanE.lean) + " lb" : "—"}</div></div>
-      <div><div class="faint">BMI</div><div class="n" style="font-size:28px;font-weight:800">${r1(bmi)}</div></div>
-    </div>
-    ${all.filter(w => w.bf != null).length >= 2 ? `<h2 style="margin-top:18px">Body fat %</h2><div class="chart" id="bfChart"></div>` : ""}
-  </div>
+  ${compCard(bfE, mmE, leanE, bmi)}
   ${bodyCard()}
   <div class="card">
     <details id="logWeight" ${db.weights.length ? "" : "open"}>
@@ -1521,10 +1554,11 @@ function drawWeightCharts() {
         line: agg.map(a => ({ t: a.t, y: a.y })), refs, label: "Monthly average weight", xticks: agg.map(a => a.t), xfmt: d => MON[parseD(d).getMonth()] });
     }
   }
-  const bfel = $("#bfChart");
-  if (bfel) {
-    const bf = allWeights().filter(w => w.bf != null);
-    drawChart(bfel, { points: bf.map(w => ({ t: tms(w.date), y: w.bf, tip: `<b>${fmtD(w.date)}</b> · ${r1(w.bf)}%` })), line: bf.map(w => ({ t: tms(w.date), y: w.bf })), refs: [], height: 170, label: "Body fat percent" });
+  const cel = $("#compChart");
+  if (cel) {
+    const pts = compSeries(cMetric);
+    drawChart(cel, { points: pts.map(x => ({ t: tms(x.date), y: x.v, hollow: x.src === "health", tip: `<b>${fmtD(x.date)}</b> · ${nf(x.v)}${cMetric === "bf" ? "%" : ""}<br>${x.src === "health" ? "Apple Health" : x.src === "weigh-in" ? "Weigh-in" : "Entered by hand"}` })),
+      line: pts.map(x => ({ t: tms(x.date), y: x.v })), refs: [], height: 170, label: cMetric === "bf" ? "Body fat percent" : "BMI" });
   }
   const bel = $("#bodyChart");
   if (bel) {
@@ -1925,33 +1959,62 @@ function viewFitness() {
   const seg = `<div class="seg">${[["cardio", "Cardio"], ["strength", "Strength"]].map(([k, l]) => `<button class="${fView === k ? "on" : ""}" data-act="fview" data-v="${k}">${l}</button>`).join("")}</div>`;
   return seg + (fView === "strength" ? fitStrength() + fitCore() + guideCard() : fitCardio());
 }
+const cardioRow = c => { const a = actFor(c.type), r = cardioCalc(c);
+  const bits = [fmtDay(c.date), c.speed ? `${nf(c.speed)} mph` : "", c.incline ? `${nf(c.incline)}% incline` : "", c.where === "treadmill" ? "treadmill" : "",
+    !c.speed && a.mode !== "incline" && c.intensity ? INTENSITY[c.intensity] : "", c.hr ? `♥ ${c.hr} bpm` : "", c.src === "health" ? "Apple Health" : ""].filter(Boolean);
+  return `<li><div class="grow">${esc(a.name === "Custom" && c.name ? c.name : a.name)}${a.upper ? ' <span class="tag red">Upper</span>' : ""}<div class="faint">${esc(bits.join(" · "))}</div>
+    <div class="faint">≈ ${r.kcal} cal <span style="opacity:.8">· ${esc(r.method)}</span></div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`; };
 function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
   const thisWeek = newestFirst(db.cardio.filter(c => c.date >= ws)), older = newestFirst(db.cardio.filter(c => c.date < ws));
-  const locked = !s.shouldersCleared, pick = lastAdd.cardioType || "Walk (outdoor)";
-  const row = c => { const a = actFor(c.type), r = cardioCalc(c);
-    const bits = [fmtDay(c.date), c.speed ? `${nf(c.speed)} mph` : "", c.incline ? `${nf(c.incline)}% incline` : "", c.where === "treadmill" ? "treadmill" : "",
-      !c.speed && a.mode !== "incline" && c.intensity ? INTENSITY[c.intensity] : "", c.hr ? `♥ ${c.hr} bpm` : "", c.src === "health" ? "Apple Health" : ""].filter(Boolean);
-    return `<li><div class="grow">${esc(a.name === "Custom" && c.name ? c.name : a.name)}${a.upper ? ' <span class="tag red">Upper</span>' : ""}<div class="faint">${esc(bits.join(" · "))}</div>
-      <div class="faint">≈ ${r.kcal} cal <span style="opacity:.8">· ${esc(r.method)}</span></div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`; };
   const calToday = cardioKcalSum(t, t), calWeek = cardioKcalSum(ws, addDays(ws, 6));
   return `
   ${weekHero("Cardio this week", sumMin(db.cardio, ws), s.cardioTarget,
     `<div class="kcalbar"><div><span class="faint">Today</span><b class="n">≈ ${calToday}</b><span class="faint"> cal</span></div><div><span class="faint">This week</span><b class="n">≈ ${calWeek}</b><span class="faint"> cal</span></div></div>
     <p class="faint" style="margin:4px 0 0">Calories burned are estimates.</p>
-    ${CARDIO_GROUPS.map((g, gi) => `<p class="faint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${g}</p>
-      <div class="chips" style="margin-bottom:4px">${ACTS.filter(a => a.g === gi).map(a => { const lk = a.upper && locked;
-        return `<button class="chip${pick === a.name ? " on" : ""}" data-act="cardioPick" data-v="${esc(a.name)}"${lk ? ' disabled title="Upper-body — locked until cleared" style="opacity:.45"' : ""}>${esc(a.name)}${lk ? " 🔒" : ""}</button>`; }).join("")}</div>`).join("")}
-    <form data-form="add" data-k="cardio" id="cardioForm" style="margin-top:10px">${specFields("cardio", { date: t, type: pick, intensity: "moderate", where: "outdoor" })}<button class="btn block">Add session</button>
-      <p class="faint">Add your average speed for walks, runs and rides (and incline on a treadmill) for a closer estimate. Average heart rate, if you have it, is used instead.</p></form>`,
-    thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(row).join("")}</ul>` : "")}
+    <button class="btn block" data-act="logCardio" id="cardioForm" style="margin-top:16px">+ Log activity</button>`,
+    thisWeek.length ? `<p class="faint" style="margin:18px 0 0;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Recent sessions</p><ul class="list">${thisWeek.map(cardioRow).join("")}</ul>`
+      : `<p class="faint" style="margin:14px 0 0">No sessions yet this week.</p>`)}
   <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>${weekBars(db.cardio, s.cardioTarget)}</div>
-  ${older.length ? `<div class="card"><h2>Earlier sessions</h2>${moreList(older, 10, row)}</div>` : ""}
+  ${older.length ? `<div class="card"><h2>Earlier sessions</h2>${moreList(older, 10, cardioRow)}</div>` : ""}
   <div class="card"><h2>How calories are estimated</h2>
     <p class="muted" style="margin-top:0">Each activity uses a MET value (how many times harder than resting it is) from the <a href="https://pacompendium.com/" target="_blank" rel="noopener">2024 Adult Compendium of Physical Activities</a>. For walking, running and biking the MET is picked by your average speed; for treadmill incline it comes from the ACSM metabolic equations for walking and running.</p>
     <p class="muted">${restingKcalDay() ? `It's then multiplied by <b>your</b> resting burn (Harris-Benedict, from your weight, height, age and sex: about ${Math.round(restingKcalDay())} cal/day) instead of the textbook average.` : `Add your height, age and sex in Settings to personalize it; until then it uses the standard formula (MET × 3.5 × weight in kg ÷ 200 per minute).`}</p>
     <p class="muted">With an average heart rate, the heart-rate formula from <a href="https://pubmed.ncbi.nlm.nih.gov/15966347/" target="_blank" rel="noopener">Keytel et al. 2005</a> is used instead (needs your age). Workouts synced from Apple Health with calories use that number. Every entry shows which method it used.</p>
     <p class="faint">All of these are estimates — real burn varies by fitness, efficiency and terrain.</p></div>`;
+}
+// Step-by-step "Log activity" sheet: group → activity → form
+let logCardio = null; // { step: "group" | "act" | "form", g, type }
+const topActivities = () => {
+  const n = {}, locked = !db.settings.shouldersCleared;
+  for (const c of db.cardio) { const a = actFor(c.type); if (!(a.upper && locked)) n[a.name] = (n[a.name] || 0) + 1; }
+  return Object.keys(n).sort((x, y) => n[y] - n[x]).slice(0, 3);
+};
+function logCardioSheet() {
+  const L = logCardio, locked = !db.settings.shouldersCleared;
+  const top = `<div class="grab"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    ${L.step === "group" ? "<span></span>" : `<button class="btn ghost small" data-act="logStep" data-step="${L.step === "form" && L.g != null ? "act" : "group"}">‹ Back</button>`}
+    <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>`;
+  if (L.step === "group") {
+    const fav = topActivities();
+    return top + `<h3 style="margin-top:6px">Log activity</h3>
+      ${fav.length ? `<p class="faint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Your most used</p>
+        <div class="pick-list">${fav.map(n => `<button class="pick" data-act="logAct" data-v="${esc(n)}">${esc(n)}<span>›</span></button>`).join("")}</div>` : ""}
+      <p class="faint" style="margin:18px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Pick a group</p>
+      <div class="pick-list">${CARDIO_GROUPS.map((g, gi) => `<button class="pick" data-act="logGroup" data-g="${gi}">${g}<small>${ACTS.filter(a => a.g === gi).map(a => a.name).slice(0, 3).join(", ")}${ACTS.filter(a => a.g === gi).length > 3 ? "…" : ""}</small><span>›</span></button>`).join("")}</div>`;
+  }
+  if (L.step === "act") {
+    const acts = ACTS.filter(a => a.g === L.g), open = acts.filter(a => !(a.upper && locked)), shut = acts.filter(a => a.upper && locked);
+    return top + `<h3 style="margin-top:6px">${CARDIO_GROUPS[L.g]}</h3>
+      <div class="pick-list" style="margin-top:12px">${open.map(a => `<button class="pick" data-act="logAct" data-v="${esc(a.name)}">${esc(a.name)}<span>›</span></button>`).join("")}
+      ${shut.map(a => `<button class="pick" disabled>${esc(a.name)}<small>🔒 Upper body — locked until you're cleared</small></button>`).join("")}</div>`;
+  }
+  const a = actFor(L.type), vals = { date: today(), type: a.name, intensity: "moderate", where: "outdoor" };
+  const fields = SPEC.cardio.rows.slice(1).map(r => `<div class="row">${r.map(fd => { const h = fieldHtml(fd, vals[fd.name], vals); return fd.show ? h.replace("<label", `<label data-show="${fd.show}"`) : h; }).join("")}</div>`).join("");
+  const speedTip = ["walk", "incline", "run", "bike"].includes(a.mode) ? `<p class="faint" style="margin-top:-4px">Average speed gives a closer calorie estimate${a.mode === "incline" || a.mode === "run" ? " (plus incline on a treadmill)" : ""}. Leave it blank to use effort instead.</p>` : "";
+  return top + `<h3 style="margin-top:6px">${esc(a.name)}</h3>
+    <form data-form="add" data-k="cardio" style="margin-top:12px"><input type="hidden" name="type" value="${esc(a.name)}">${fields}${speedTip}
+      <button class="btn block">Save activity</button></form>`;
 }
 function fitStrength() {
   const s = db.settings, t = today(), ws = weekStart(t), cleared = s.shouldersCleared;
@@ -2161,7 +2224,7 @@ const CTESTS = {
   longrun: { name: "Longest continuous run", unit: "min", dir: "hi", src: null, how: "The longest you can run without walking.", cut: () => [20, 45] },
   rhr: { name: "Resting heart rate", unit: "bpm", dir: "lo", src: "aha", how: "Count your pulse for 60 seconds after waking, before getting up (or use your watch).", cut: () => [85, 65] },
   cardiomin: { name: "Cardio, last 7 days", unit: "min", dir: "hi", src: "cdc", auto: () => sumMin(db.cardio, addDays(today(), -6), today()), how: "Filled in from your cardio log.", cut: () => [75, 150] },
-  bodyfat: { name: "Body fat", unit: "%", dir: "lo", src: "ace", auto: () => { const w = [...allWeights()].reverse().find(x => x.bf != null); return w ? w.bf : null; },
+  bodyfat: { name: "Body fat", unit: "%", dir: "lo", src: "ace", auto: () => { const x = compLatest("bf"); return x ? x.bf : null; },
     how: "From your latest weigh-in with body fat; you can type a newer number.", cut: (a, sex) => sex === "female" ? [31, 24] : [24, 17] },
   pain: { name: "Pain during daily activity", unit: "0–10", dir: "lo", src: null, how: "0 = none, 10 = worst imaginable.", cut: () => [3, 1] }
 };
@@ -2707,12 +2770,13 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = editing ? editSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
   if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
-  if (editing || openGuide || openScan) { sh.scrollTop = 0; return; }
+  if (logCardio && logCardio.step === "form") syncCardioForm($("form", sh));
+  if (editing || openGuide || openScan || logCardio) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -2889,7 +2953,7 @@ document.addEventListener("submit", e => {
   const ok = form.dataset.form === "add" ? addEntry(form.dataset.k, fd) : forms[form.dataset.form](fd);
   if (ok !== false) render();
 });
-const syncExList = el => { if (el.name === "type" && el.form) syncCardioForm(el.form); const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
+const syncExList = el => { if ((el.name === "type" || el.name === "where") && el.form) syncCardioForm(el.form); const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
   syncExList(e.target);
   if (draftInput(e.target)) return;
@@ -2901,6 +2965,7 @@ document.addEventListener("input", e => {
 document.addEventListener("change", e => {
   syncExList(e.target);
   if (e.target.id === "bodyMetric") { bMetric = e.target.value; render(); return; }
+  if (e.target.id === "compMetric") { cMetric = e.target.value; render(); return; }
   if (e.target.type === "checkbox" && e.target.dataset.draft) { draftInput(e.target); return; }
   if (e.target.dataset.act !== "import") return;
   const file = e.target.files[0]; if (!file) return;
@@ -2928,12 +2993,12 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); openLab = null; editing = null; openGuide = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const ct = e.target.closest(".foldable > h2"); if (ct && !e.target.closest("a, button, select, input")) { toggleCard(ct); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
   if (act === "settings") { e.preventDefault(); openLab = null; editing = null; go(current === "settings" ? "home" : "settings"); return; }
-  if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; go(el.dataset.go, el.dataset.focus); return; }
+  if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; if (el.dataset.focus === "cardioForm") { go(el.dataset.go); logCardio = { step: "group" }; renderSheet(); return; } go(el.dataset.go, el.dataset.focus); return; }
   if (act === "wview") { wView = el.dataset.v; render(); return; }
   if (act === "fview") { fView = el.dataset.v; render(); return; }
   if (act === "estimate") {
@@ -2971,17 +3036,21 @@ document.addEventListener("click", e => {
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { if (editing) editing = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") { coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render(); window.scrollTo(0, 0); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "scanStart") { startScan(); return; }
+  if (act === "compAdd") { const d = $("#logComp"); if (d) { d.open = true; d.scrollIntoView({ block: "center", behavior: "smooth" }); const i = $("#logComp [name=bf]"); if (i) setTimeout(() => i.focus({ preventScroll: true }), 300); } return; }
+  if (act === "logCardio") { logCardio = { step: "group" }; renderSheet(); return; }
+  if (act === "logGroup") { logCardio = { step: "act", g: +el.dataset.g }; renderSheet(); return; }
+  if (act === "logAct") { logCardio = { step: "form", g: logCardio && logCardio.g, type: el.dataset.v }; renderSheet(); const m = $("#sheet [name=min]"); if (m) m.focus({ preventScroll: true }); return; }
+  if (act === "logStep") { logCardio = el.dataset.step === "act" ? { step: "act", g: logCardio.g } : { step: "group" }; renderSheet(); return; }
   if (act === "scanClose") { stopScan(); return; }
   if (act === "saveAnyway") { draft.force = true; const f = $("form[data-form=meal]"); if (f) f.requestSubmit(); return; }
   if (act === "browserOk") { browserOk = true; try { localStorage.setItem(KEY + ".browserOk", "1"); } catch (err) {} render(); return; }
   if (act === "closeRecap") { const r = $("#recap"); if (r) { r.classList.remove("show"); setTimeout(() => r.remove(), 250); } return; }
   if (act === "recap") { showRecap(el.dataset.d); return; }
-  if (act === "cardioPick") { lastAdd.cardioType = el.dataset.v; const sel = $("#cardioForm [name=type]"); if (sel) sel.value = el.dataset.v; syncCardioForm($("#cardioForm")); document.querySelectorAll("[data-act=cardioPick]").forEach(b => b.classList.toggle("on", b === el)); return; }
   if (act === "del") {
     if (!confirm("Delete this entry?")) return;
     setColl(el.dataset.k, coll(el.dataset.k).filter(x => String(x.id) !== el.dataset.id));
