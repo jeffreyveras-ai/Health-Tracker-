@@ -244,6 +244,8 @@ nav.tabs button.on svg { color: var(--accent); }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 .chip.on { background: var(--accent); color: #fff; }
 .pick-list { display: grid; gap: 8px; }
+.qa-sel { display: flex; align-items: center; gap: 10px; background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin: 12px 0 10px; }
+.slot-head { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 0; }
 .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; padding: 0; cursor: pointer; }
 .pick { display: grid; grid-template-columns: 1fr auto; align-items: center; text-align: left; border: 0; border-radius: 14px; background: var(--card-2); color: var(--ink); font: inherit; font-weight: 700; font-size: 17px; padding: 14px 16px; min-height: 56px; cursor: pointer; }
 .pick small { grid-column: 1; font-weight: 500; font-size: 13px; color: var(--ink-3); margin-top: 2px; }
@@ -1016,7 +1018,7 @@ const SPEC = {
       if (db.weights.some(x => x !== old && x.date === e.date && x.type === e.type)) return `There's already a ${TYPES[e.type].toLowerCase()} reading on ${fmtD(e.date)}. Edit or delete that one instead.`;
     } },
   meals: { title: "meal",
-    rows: [[D("Date", { maxToday: 0 }), F("time", "Time", "time", { req: 1 })], [F("text", "What did you eat?", "textarea", { req: 1 })],
+    rows: [[D("Date", { maxToday: 0 }), F("time", "Time", "time", { req: 1 })], [F("slot", "Meal", "select", { opts: () => SLOTS })], [F("text", "What did you eat?", "textarea", { req: 1 })],
       [F("cal", "Calories (total)", "int", { min: 0 }), F("protein", "Protein g (total)", "num", { min: 0, step: "0.1" })], [F("cheat", "This was a cheat meal", "check")]] },
   foods: { title: "food", added: "Food added",
     rows: [[F("name", "Food name", "text", { req: 1 })], [F("serving", "Serving (as shown)", "text", { req: 1, ph: "e.g. 1 medium, 1/2 cup dry" })],
@@ -1158,7 +1160,7 @@ function editSheet() {
   return `<div class="grab"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3>Edit ${esc(SPEC[k].title)}</h3>
       <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
-    <form data-form="edit" style="margin-top:14px">${specFields(k, item)}<button class="btn block">Save changes</button></form>
+    <form data-form="edit" style="margin-top:14px">${specFields(k, k === "meals" ? { ...item, slot: slotOf(item) } : item)}<button class="btn block">Save changes</button></form>
     <button class="btn danger block" style="margin-top:10px" data-act="del" data-k="${k}" data-id="${esc(id)}">Delete</button>`;
 }
 const rowBtns = (k, id) => `<button class="x" data-act="edit" data-k="${k}" data-id="${esc(id)}" aria-label="Edit">✎</button><button class="x" data-act="del" data-k="${k}" data-id="${esc(id)}" aria-label="Delete">×</button>`;
@@ -1659,7 +1661,7 @@ async function offSearch(q) {
 }
 // The meal being entered, kept outside the DOM so re-renders don't lose it
 const nowHM = () => { const n = new Date(); return `${pad(n.getHours())}:${pad(n.getMinutes())}`; };
-const newDraft = () => ({ date: today(), time: nowHM(), dateTouched: false, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "", autoEst: false, nudge: false, force: false });
+const newDraft = () => ({ date: today(), time: nowHM(), dateTouched: false, slot: null, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "", autoEst: false, nudge: false, force: false });
 let draft = newDraft();
 let mealFormOpen = null; // remembers whether you left "Log a meal" open
 const draftTotals = () => ({ cal: draft.rows.reduce((a, r) => a + (r.cal || 0), 0), protein: r1n(draft.rows.reduce((a, r) => a + (r.protein || 0), 0)) });
@@ -1738,7 +1740,7 @@ function saveMeal() {
   const items = draft.rows.map(r => { const f = foodById(r.foodId);
     return { foodId: r.foodId, name: f ? f.name : r.name || r.text, servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }; });
   const tot = draftTotals(), date = draft.dateTouched ? draft.date || today() : today(), time = draft.dateTouched ? draft.time || nowHM() : nowHM();
-  db.meals.push({ id: uid(), date, time, text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
+  db.meals.push({ id: uid(), date, time, slot: draft.slot || slotByTime(time), text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
     items, cal: known.length ? tot.cal : null, protein: known.length ? tot.protein : null, est: true });
   const pn = draft.presetName.trim();
   if (pn && items.length) {
@@ -1812,6 +1814,158 @@ function dayEnergy(date) {
 }
 
 // =====================================================================
+// Quick Add: type anything; pick a match (Food List, My Foods, Open Food Facts),
+// or enter calories and protein yourself — by hand or from an AI app's reply
+// =====================================================================
+const SLOTS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
+const slotByTime = hm => { const h = +String(hm || "12:00").slice(0, 2); return h < 11 ? "breakfast" : h < 15 ? "lunch" : h >= 17 && h < 22 ? "dinner" : "snack"; };
+const slotOf = m => SLOTS[m.slot] ? m.slot : slotByTime(m.time);
+const newQa = slot => ({ desc: "", cal: "", protein: "", servings: 1, food: null, slot: slot || slotByTime(nowHM()), slotTouched: !!slot,
+  date: today(), time: nowHM(), dateTouched: false, local: [], results: null, msg: null, paste: false, nudged: false });
+let qa = newQa(), qaSaved = null, qaTimer = null;
+const qaCache = {};
+// Food List and My Foods entries whose names match the description (exact match = all words the same)
+function qaLocal(desc) {
+  const t = foodTokens(desc), out = [];
+  if (!t.length) return out;
+  const consider = (kind, id, name, keys, serving, cal, protein) => {
+    let best = 0;
+    for (const key of keys) {
+      const k = foodTokens(key); if (!k.length) continue;
+      const sc = k.length === t.length && k.every(w => t.includes(w)) ? 100 : k.every(w => t.includes(w)) ? 10 * k.length : t.every(w => k.includes(w)) ? 5 * t.length : 0;
+      best = Math.max(best, sc);
+    }
+    if (best) out.push({ kind, id, name, serving, cal, protein, exact: best === 100, sc: best });
+  };
+  for (const p of db.presets) consider("preset", p.id, p.name, [p.name], "1 serving", Math.round(p.items.reduce((a, i) => a + (i.cal || 0), 0)), r1n(p.items.reduce((a, i) => a + (i.protein || 0), 0)));
+  for (const f of db.foods) consider("food", f.id, f.name, [f.name, ...(f.aliases || [])], f.serving, f.cal, f.protein);
+  return out.sort((a, b) => b.sc - a.sc).slice(0, 4);
+}
+function qaSearch() {
+  const q = qa.desc.trim(), key = q.toLowerCase();
+  qa.local = qaLocal(q);
+  if (q.length < 3 || qa.local.some(x => x.exact)) { qa.results = null; qaRefresh(); return; }
+  if (qaCache[key]) { qa.results = qaCache[key]; qaRefresh(); return; }
+  qa.results = "loading"; qaRefresh();
+  offSearch(q).then(list => { qaCache[key] = list.slice(0, 5); if (qa.desc.trim() === q) { qa.results = qaCache[key]; qaRefresh(); } },
+    () => { if (qa.desc.trim() === q) { qa.results = "error"; qaRefresh(); } });
+}
+const qaLabel = t => `<p class="faint" style="margin:12px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${t}</p>`;
+function qaResultsHtml() {
+  if (qa.food || !qa.desc.trim()) return "";
+  const pick = (src, x, i) => `<button type="button" class="pick" data-act="qaPick" data-src="${src}" data-i="${i}">${esc(x.name)}<small>${x.kind === "preset" ? "My Foods · " : ""}per ${esc(x.serving)}: ${x.cal} cal · ${x.protein} g protein</small><span>+</span></button>`;
+  let h = qa.local.length ? qaLabel("From your foods") + `<div class="pick-list">${qa.local.map((x, i) => pick("local", x, i)).join("")}</div>` : "";
+  if (qa.results === "loading") h += `<p class="faint" style="margin:10px 0 0">Searching Open Food Facts…</p>`;
+  else if (qa.results === "error") h += `<p class="faint" style="margin:10px 0 0">Couldn't reach Open Food Facts. Enter calories and protein below, or tap Ask AI.</p>`;
+  else if (Array.isArray(qa.results)) h += qa.results.length
+    ? qaLabel("Open Food Facts") + `<div class="pick-list">${qa.results.map((x, i) => pick("off", x, i)).join("")}</div>
+      <p class="faint" style="margin:6px 0 0">Product data from <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (Open Database License).</p>`
+    : `<p class="faint" style="margin:10px 0 0">${qa.local.length ? "No Open Food Facts matches either." : "No matches found."} Enter calories and protein below, or tap Ask AI.</p>`;
+  return h;
+}
+function qaSelHtml() {
+  const f = qa.food; if (!f) return "";
+  return `<div class="qa-sel"><div class="grow"><b>${esc(f.name)}</b><div class="faint">per ${esc(f.serving)}: ${f.cal} cal · ${f.protein} g protein</div></div>
+    <button type="button" class="x" data-act="qaClear" aria-label="Clear selection">×</button></div>
+    <label>Servings<input data-qa="servings" type="number" step="0.25" min="0" inputmode="decimal" value="${esc(qa.servings)}"></label>`;
+}
+function qaMsgHtml() {
+  const m = qa.msg; let h = "";
+  if (m) h += m.kind === "copy"
+    ? `<div class="banner warn" style="margin-top:10px">Couldn't copy automatically — select the prompt below and copy it, then paste it into your AI app.
+        <textarea readonly rows="4" style="margin-top:8px" onfocus="this.select()">${esc(m.text)}</textarea></div>`
+    : `<div class="banner ${m.kind === "warn" ? "warn" : ""}" style="margin-top:10px">${esc(m.text)}</div>`;
+  if (qa.paste) h += `<label style="margin-top:10px">Paste the AI reply here<textarea data-qa-paste rows="3" placeholder="Calories: 650, Protein: 42g"></textarea></label>
+    <button type="button" class="btn secondary small block" data-act="qaPasteBox">Use this reply</button>`;
+  return h;
+}
+function qaSavedHtml() {
+  const s = qaSaved; if (!s) return "";
+  const mine = db.presets.some(p => exKey(p.name) === exKey(s.name));
+  return `<div class="banner" style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div class="grow" style="flex:1;min-width:150px">Logged <b>${esc(s.name)}</b> to ${SLOTS[s.slot].toLowerCase()}${s.cal != null ? ` — ${s.cal} cal · ${s.protein || 0} g protein` : ""}.</div>
+    ${s.custom ? mine ? `<span class="tag good">✓ In My Foods</span>` : `<button type="button" class="btn secondary small" data-act="qaSaveMine">Save to My Foods</button>` : ""}
+    <button type="button" class="x" data-act="qaDismiss" aria-label="Dismiss">×</button></div>`;
+}
+function qaRefresh() {
+  const set = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = h; };
+  set("qaResults", qaResultsHtml()); set("qaSel", qaSelHtml()); set("qaMsg", qaMsgHtml()); set("qaSavedBox", qaSavedHtml());
+}
+const qaSetInput = (k, v) => { const el = $(`[data-qa=${k}]`); if (el) el.value = v; };
+function qaInput(el) {
+  const k = el.dataset.qa; if (!k) return false;
+  if (k === "desc") {
+    qa.desc = el.value; qa.nudged = false;
+    if (qa.food) { qa.food = null; qa.cal = ""; qa.protein = ""; qaSetInput("cal", ""); qaSetInput("protein", ""); }
+    qa.local = qaLocal(qa.desc); qa.results = qa.desc.trim().length >= 3 && !qa.local.some(x => x.exact) ? qa.results : null; qaRefresh();
+    clearTimeout(qaTimer); qaTimer = setTimeout(qaSearch, 650);
+  } else if (k === "servings") {
+    qa.servings = el.value; const n = num(el.value);
+    if (qa.food && n != null) { qa.cal = String(Math.round(qa.food.cal * n)); qa.protein = String(r1n(qa.food.protein * n)); qaSetInput("cal", qa.cal); qaSetInput("protein", qa.protein); }
+  } else {
+    qa[k] = el.value;
+    if (k === "date" || k === "time") qa.dateTouched = true;
+  }
+  return true;
+}
+// Pull "Calories: X, Protein: Yg" (and looser phrasings, ranges like 600–700) out of an AI app's reply
+function parseAiReply(text) {
+  const t = String(text || "").replace(/[*_`#]/g, "").replace(/(\d),(\d{3})\b/g, "$1$2");
+  const N = "(\\d+(?:\\.\\d+)?)(?:\\s*(?:-|–|—|to)\\s*(\\d+(?:\\.\\d+)?))?";
+  const val = m => m ? (m[2] ? (parseFloat(m[1]) + parseFloat(m[2])) / 2 : parseFloat(m[1])) : null;
+  const cal = val(t.match(new RegExp(N + "\\s*(?:kcal|k?cals?\\b|calories)", "i")) || t.match(new RegExp("(?:calories|kcal|cals?)\\b[^\\d\\n]{0,30}?" + N, "i")));
+  const pro = val(t.match(new RegExp(N + "\\s*g(?:rams?)?\\s*(?:of\\s+)?protein", "i")) || t.match(new RegExp("protein\\b[^\\d\\n]{0,30}?" + N, "i")));
+  return { cal: cal != null && cal < 10000 ? Math.round(cal) : null, protein: pro != null && pro < 1000 ? r1n(pro) : null };
+}
+function qaApplyReply(text) {
+  const r = parseAiReply(text);
+  if (r.cal != null) { qa.cal = String(r.cal); qaSetInput("cal", qa.cal); }
+  if (r.protein != null) { qa.protein = String(r.protein); qaSetInput("protein", qa.protein); }
+  if (r.cal != null || r.protein != null) { qa.food = null; qa.paste = false; }
+  qa.msg = r.cal != null && r.protein != null ? { kind: "ok", text: "Filled in from the AI reply — check the numbers, then save." }
+    : r.cal != null ? { kind: "warn", text: "Found calories but no protein — type the protein in if you know it." }
+    : r.protein != null ? { kind: "warn", text: "Found protein but no calories — type the calories in." }
+    : { kind: "warn", text: "Couldn't find calorie or protein numbers in that reply — type them in below." };
+  qaRefresh();
+}
+// Clipboard helpers. Both must start inside the tap itself for iPhone Safari and home-screen apps.
+function legacyCopy(text) {
+  const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px"; document.body.appendChild(ta);
+  ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove(); return ok;
+}
+function copyText(text) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => legacyCopy(text)); } catch (e) {}
+  return Promise.resolve(legacyCopy(text));
+}
+function qaSave() {
+  const desc = qa.desc.trim();
+  if (!desc) { toast("Describe what you ate first"); const d = $("[data-qa=desc]"); if (d) d.focus(); return false; }
+  const cal = num(qa.cal), protein = num(qa.protein);
+  if (cal == null && !qa.nudged) {
+    qa.nudged = true; qa.msg = { kind: "warn", text: "Calories are blank. Pick a match, tap Ask AI, or type them in — or tap Save again to log it without calories." };
+    qaRefresh(); return false;
+  }
+  let foodId = null;
+  if (qa.food && qa.food.kind === "food") foodId = qa.food.id;
+  if (qa.food && qa.food.off) {
+    let f = qa.food.off.code && db.foods.find(x => x.src === "off" && x.code === qa.food.off.code);
+    if (!f) { f = { id: uid(), ...qa.food.off }; db.foods.push(f); }
+    foodId = f.id;
+  }
+  const servings = qa.food ? num(qa.servings) || 1 : 1;
+  const m = { id: uid(), date: qa.dateTouched ? qa.date || today() : today(), time: qa.dateTouched ? qa.time || nowHM() : nowHM(), slot: qa.slot,
+    text: desc, cheat: false, items: [{ foodId, name: qa.food ? qa.food.name : desc, servings, cal: Math.round(cal || 0), protein: r1n(protein || 0) }],
+    cal: cal == null ? null : Math.round(cal), protein: cal == null && protein == null ? null : r1n(protein || 0), est: true, src: "quick" };
+  db.meals.push(m);
+  qaSaved = { id: m.id, name: desc, slot: m.slot, cal: m.cal, protein: m.protein, custom: !qa.food };
+  qa = newQa(qa.slot); save();
+  toast(m.cal != null ? `Logged — ${m.cal} cal, ${m.protein} g protein` : "Logged without calories — add them later with ✎");
+}
+
+// =====================================================================
 // Fast & food tab
 // =====================================================================
 function energyCard() {
@@ -1866,17 +2020,42 @@ function viewFood() {
     const dur = new Date(f.end) - new Date(f.start), hit = dur >= s.fastTarget * 36e5;
     return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
       <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}${rowBtns("fasts", f.id)}</li>`; };
-  const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate ? 92 : 66}px;flex:none">${withDate ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}
+  const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate === true ? 92 : 66}px;flex:none">${withDate === true ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}${withDate !== "today" ? `<br><span style="font-size:12px">${SLOTS[slotOf(m)]}</span>` : ""}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}
     ${m.cal != null ? `<div class="faint">${m.cal} cal · ${m.protein || 0} g protein${m.est ? " · estimated" : ""}</div>` : ""}</div>${rowBtns("meals", m.id)}</li>`;
   const avgFast = recentFasts.length ? recentFasts.reduce((a, f) => a + (new Date(f.end) - new Date(f.start)), 0) / recentFasts.length : null;
   const meals = [...db.meals].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-  const recentMeals = meals.filter(m => m.date >= addDays(t, -6)), olderMeals = meals.filter(m => m.date < addDays(t, -6));
+  const recentMeals = meals.filter(m => m.date >= addDays(t, -6) && m.date !== t), olderMeals = meals.filter(m => m.date < addDays(t, -6));
+  const todays = meals.filter(m => m.date === t).reverse(), sumOf = ms => ({ cal: ms.reduce((a, m) => a + (m.cal || 0), 0), p: r1n(ms.reduce((a, m) => a + (m.protein || 0), 0)) });
+  const dayTot = sumOf(todays);
+  if (!qa.dateTouched) { qa.date = t; qa.time = nowHM(); }
+  if (!qa.slotTouched) qa.slot = slotByTime(nowHM());
   const byDay = {};
   recentMeals.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
   return `${fastCard}
-  <div class="card"><h2>Meals</h2>
-    <details id="mealForm" ${mealFormOpen ?? !meals.length ? "open" : ""}><summary>Log a meal</summary>
+  <div class="card"><h2>Meals <small>today: ${dayTot.cal} cal · ${dayTot.p} g</small></h2>
+    <form data-form="quickAdd" id="quickAdd">
+      <div class="seg" role="group" aria-label="Which meal">${Object.entries(SLOTS).map(([k, l]) => `<button type="button" class="${qa.slot === k ? "on" : ""}" data-act="qaSlot" data-v="${k}">${l}</button>`).join("")}</div>
+      <label>What did you eat?<input data-qa="desc" value="${esc(qa.desc)}" placeholder="e.g. chicken burrito bowl, mom's arroz con pollo" autocomplete="off" enterkeyhint="done"></label>
+      <div id="qaResults">${qaResultsHtml()}</div>
+      <div id="qaSel">${qaSelHtml()}</div>
+      <div class="row" style="margin-top:10px">
+        <label>Calories<input data-qa="cal" type="number" min="0" step="1" inputmode="numeric" value="${esc(qa.cal)}" placeholder="kcal"></label>
+        <label>Protein (g)<input data-qa="protein" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(qa.protein)}" placeholder="g"></label></div>
+      <div class="btn-row"><button type="button" class="btn secondary small" data-act="qaAsk" style="flex:1">✨ Ask AI</button><button type="button" class="btn secondary small" data-act="qaPaste" style="flex:1">📋 Paste AI reply</button></div>
+      <div id="qaMsg">${qaMsgHtml()}</div>
+      <details id="qaWhen" style="margin-top:12px"><summary>Different day or time?</summary>
+        <div class="row"><label>Date<input type="date" data-qa="date" value="${esc(qa.date)}" max="${t}"></label><label>Time<input type="time" data-qa="time" value="${esc(qa.time)}"></label></div></details>
+      <button class="btn block" style="margin-top:12px">Save to today's log</button>
+    </form>
+    <div id="qaSavedBox">${qaSavedHtml()}</div>
+    ${qaLabel("Today's log")}
+    ${todays.length ? Object.keys(SLOTS).filter(k => todays.some(m => slotOf(m) === k)).map(k => { const ms = todays.filter(m => slotOf(m) === k), st = sumOf(ms);
+      return `<div class="slot-head"><b>${SLOTS[k]}</b><span class="faint">${st.cal} cal · ${st.p} g</span></div><ul class="list">${ms.map(m => mealRow(m, "today")).join("")}</ul>`; }).join("")
+      : `<p class="faint" style="margin:0">Nothing logged yet today.</p>`}
+    <details id="mealForm" style="margin-top:16px" ${mealFormOpen ? "open" : ""}><summary>Build a meal from several foods</summary>
+      <p class="faint" style="margin-top:0">For meals with several parts — type them all, scan barcodes, or use My Foods.</p>
       <form data-form="meal">
+        <div class="seg" role="group" aria-label="Which meal">${Object.entries(SLOTS).map(([k, l]) => `<button type="button" class="${(draft.slot || slotByTime(draft.time)) === k ? "on" : ""}" data-act="draftSlot" data-v="${k}">${l}</button>`).join("")}</div>
         <div class="row"><label>Date<input type="date" data-draft="date" value="${esc(draft.date)}" required></label><label>Time<input type="time" data-draft="time" value="${esc(draft.time)}" required></label></div>
         <label>What did you eat?<textarea data-draft="text" rows="2" placeholder="e.g. 2 sweet potatoes, 7 meatballs, 1 tbsp peanut butter">${esc(draft.text)}</textarea></label>
         <div class="btn-row"><button type="button" class="btn secondary" data-act="estimate" style="flex:2">Estimate</button><button type="button" class="btn secondary" data-act="scanStart" style="flex:1">📷 Scan</button></div>
@@ -1891,15 +2070,14 @@ function viewFood() {
         <button class="btn block" style="margin-top:10px">Save meal</button>
         <button type="button" class="btn ghost block small" style="margin-top:8px" data-act="clearDraft">Clear</button>
       </form></details>
-    ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => `<p class="faint" style="margin:16px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${fmtDay(d)}</p><ul class="list">${ms.map(m => mealRow(m)).join("")}</ul>`).join("")
-      : `<p class="faint">No meals logged in the last 7 days.</p>`}
+    ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => { const st = sumOf(ms); return `<div class="slot-head" style="margin-top:16px"><b style="text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--ink-3)">${fmtDay(d)}</b><span class="faint">${st.cal} cal · ${st.p} g</span></div><ul class="list">${ms.map(m => mealRow(m)).join("")}</ul>`; }).join("") : ""}
     ${olderMeals.length ? `<details style="margin-top:12px"><summary>Earlier meals (${olderMeals.length})</summary><ul class="list">${olderMeals.map(m => mealRow(m, true)).join("")}</ul></details>` : ""}
   </div>
   <div class="card"><h2>My Foods <small>saved meals &amp; combos</small></h2>
     ${db.presets.length ? `<ul class="list">${db.presets.map(p => { const c = p.items.reduce((a, i) => a + i.cal, 0), pr = r1n(p.items.reduce((a, i) => a + i.protein, 0));
       return `<li><div class="grow"><b>${esc(p.name)}</b><div class="faint">${esc(p.items.map(i => i.name).join(", "))}</div><div class="faint">${c} cal · ${pr} g protein</div></div>
         <button class="btn secondary small" data-act="addPreset" data-id="${esc(p.id)}">Log</button>${rowBtns("presets", p.id)}</li>`; }).join("")}</ul>`
-      : `<p class="faint" style="margin:0">After estimating a meal, give it a name before saving to keep it here. You can also type its name in the meal box, like “2 usual breakfast”.</p>`}
+      : `<p class="faint" style="margin:0">After logging something with Quick Add, tap <b>Save to My Foods</b> — or name a built meal before saving. Saved foods show up as you type next time.</p>`}
   </div>
   <div class="card"><h2>Food list <small>${db.foods.length} foods</small></h2><div>
     <p class="faint" style="margin-top:0">What the meal box matches against. Synonyms help it recognize other words for the same food; plurals work automatically.</p>
@@ -2870,6 +3048,7 @@ function viewSettings() {
 // Actions
 // =====================================================================
 const forms = {
+  quickAdd: () => qaSave(),
   ...coachForms,
   ...scanForms,
   weight(f) {
@@ -2956,6 +3135,7 @@ document.addEventListener("submit", e => {
 const syncExList = el => { if ((el.name === "type" || el.name === "where") && el.form) syncCardioForm(el.form); const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
   syncExList(e.target);
+  if (qaInput(e.target)) return;
   if (draftInput(e.target)) return;
   if (e.target.name === "name" && e.target.closest("form[data-form=lab]")) {
     const t = findTest(e.target.value), u = e.target.form.elements.unit;
@@ -2982,6 +3162,7 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealFormOpen = e.target.open; }, true);
 document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.dataset && e.target.dataset.qa === "desc") { e.preventDefault(); e.target.blur(); return; }
   if (e.key === "Enter" && e.target.dataset && e.target.dataset.draft === "q") { e.preventDefault(); $("[data-act=offSearch]").click(); }
 });
 document.addEventListener("keydown", e => {
@@ -3016,7 +3197,7 @@ document.addEventListener("click", e => {
   if (act === "clearDraft") { draft = newDraft(); render(); return; }
   if (act === "addPreset") {
     const p = db.presets.find(x => x.id === el.dataset.id); if (!p) return;
-    draft.rows.push(...presetRows(p)); if (!draft.text.trim()) draft.text = p.name;
+    draft.rows.push(...presetRows(p)); if (!draft.text.trim()) draft.text = p.name; mealFormOpen = true;
     if (current === "food") { render(); $("#draft").scrollIntoView({ block: "center" }); } else go("food", "mealForm");
     toast(`Added ${p.name} — review and save`); return;
   }
@@ -3047,6 +3228,38 @@ document.addEventListener("click", e => {
   if (act === "logAct") { logCardio = { step: "form", g: logCardio && logCardio.g, type: el.dataset.v }; renderSheet(); const m = $("#sheet [name=min]"); if (m) m.focus({ preventScroll: true }); return; }
   if (act === "logStep") { logCardio = el.dataset.step === "act" ? { step: "act", g: logCardio.g } : { step: "group" }; renderSheet(); return; }
   if (act === "scanClose") { stopScan(); return; }
+  if (act === "qaSlot") { qa.slot = el.dataset.v; qa.slotTouched = true; el.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === el)); return; }
+  if (act === "draftSlot") { draft.slot = el.dataset.v; el.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === el)); return; }
+  if (act === "qaPick") {
+    const x = el.dataset.src === "local" ? qa.local[+el.dataset.i] : Array.isArray(qa.results) && qa.results[+el.dataset.i]; if (!x) return;
+    qa.food = { kind: x.kind || "off", id: x.id, name: x.name, serving: x.serving, cal: x.cal, protein: x.protein, off: el.dataset.src === "off" ? x : null };
+    qa.desc = x.name; qa.servings = 1; qa.cal = String(x.cal); qa.protein = String(x.protein); qa.msg = null; qa.nudged = false;
+    qaSetInput("desc", qa.desc); qaSetInput("cal", qa.cal); qaSetInput("protein", qa.protein); qaRefresh(); return;
+  }
+  if (act === "qaClear") { qa.food = null; qa.cal = ""; qa.protein = ""; qaSetInput("cal", ""); qaSetInput("protein", ""); qa.local = qaLocal(qa.desc); qaRefresh(); return; }
+  if (act === "qaAsk") {
+    const text = `Estimate the calories and protein for this meal: ${qa.desc.trim() || "(see the attached photo)"}. If I attached a photo, use it to judge portion size. Reply only in this format: Calories: X, Protein: Yg`;
+    copyText(text).then(ok => {
+      qa.msg = ok ? { kind: "ok", text: "Prompt copied. Paste it into your AI app (Gemini, ChatGPT, Claude), add a photo, then come back." } : { kind: "copy", text };
+      qaRefresh(); if (ok) toast("Prompt copied");
+    });
+    return;
+  }
+  if (act === "qaPaste") {
+    let p = null;
+    try { p = navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : null; } catch (err) {}
+    if (!p) { qa.paste = true; qa.msg = { kind: "warn", text: "Paste the AI reply into the box below." }; qaRefresh(); return; }
+    p.then(txt => { if (txt && txt.trim()) qaApplyReply(txt); else { qa.paste = true; qa.msg = { kind: "warn", text: "The clipboard looks empty — copy the AI's reply, or paste it into the box below." }; qaRefresh(); } },
+      () => { qa.paste = true; qa.msg = { kind: "warn", text: "Couldn't read the clipboard here — press and hold in the box below, tap Paste, then Use this reply." }; qaRefresh(); });
+    return;
+  }
+  if (act === "qaPasteBox") { const ta = $("[data-qa-paste]"); qaApplyReply(ta ? ta.value : ""); return; }
+  if (act === "qaSaveMine") {
+    const sv = qaSaved; if (!sv) return;
+    if (!db.presets.some(p => exKey(p.name) === exKey(sv.name))) db.presets.push({ id: uid(), name: sv.name, items: [{ foodId: null, name: sv.name, servings: 1, cal: sv.cal || 0, protein: sv.protein || 0 }] });
+    save(); toast(`“${sv.name}” saved to My Foods`); render(); return;
+  }
+  if (act === "qaDismiss") { qaSaved = null; qaRefresh(); return; }
   if (act === "saveAnyway") { draft.force = true; const f = $("form[data-form=meal]"); if (f) f.requestSubmit(); return; }
   if (act === "browserOk") { browserOk = true; try { localStorage.setItem(KEY + ".browserOk", "1"); } catch (err) {} render(); return; }
   if (act === "closeRecap") { const r = $("#recap"); if (r) { r.classList.remove("show"); setTimeout(() => r.remove(), 250); } return; }
