@@ -243,12 +243,24 @@ nav.tabs button.on svg { color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 .chip.on { background: var(--accent); color: #fff; }
+#scanner { position: fixed; inset: 0; z-index: 45; background: #000; display: flex; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+#scanner .scan-top { display: flex; justify-content: space-between; align-items: center; font-size: 18px; margin-bottom: 10px; }
+#scanner .scan-view { position: relative; flex: 1; min-height: 0; border-radius: 16px; overflow: hidden; background: #111; }
+#scanner video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#scanner .scan-box { position: absolute; left: 8%; right: 8%; top: 36%; height: 28%; border: 3px solid var(--accent); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); }
+#scanner .scan-msg { text-align: center; color: var(--ink-2); margin: 12px 0; }
+#scanner .scan-manual { display: flex; gap: 8px; align-items: center; } #scanner .scan-manual input { margin: 0; }
+ol.steps { list-style: none; margin: 0; padding: 0; }
+ol.steps li { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); font-size: 17px; }
+ol.steps li:first-child { border-top: 0; }
+ol.steps span { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-family: var(--num); font-weight: 800; font-size: 18px; }
 .kcalbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
 .kcalbar > div { background: rgba(255,255,255,.05); border-radius: 12px; padding: 10px 12px; }
 .kcalbar span { display: block; } .kcalbar span + b { font-size: 26px; font-weight: 800; } .kcalbar b + span { display: inline; }
 label[hidden] { display: none !important; }
 .foldable > h2 { cursor: pointer; user-select: none; -webkit-user-select: none; }
-.foldable > h2 .ct { display: inline-flex; align-items: center; gap: 8px; }
+.foldable > h2 .ct { min-width: 0; }
+.foldable > h2 .cr { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; text-align: right; }
 .foldable > h2 .chev { width: 12px; height: 12px; color: var(--ink-3); transition: transform .2s; transform: rotate(90deg); flex: none; }
 .foldable.collapsed > h2 .chev { transform: rotate(0deg); }
 .foldable.collapsed > h2 { margin-bottom: 0; }
@@ -301,7 +313,7 @@ const DEFAULTS = {
   v: 5,
   settings: {
     name: "", setupDone: false, heightIn: null, startWeight: null, startDate: null, goals: [],
-    cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
+    weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
     // suggestions shown when logging; names you type in get added
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
@@ -447,7 +459,11 @@ const num = v => {
   return isNaN(n) ? null : n;
 };
 const localInput = d => `${dstr(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-const weekStart = s => { const d = parseD(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return dstr(d); };
+// Weeks end on your weigh-in day (default Friday), so every weekly number lines up with the weigh-in
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const weighDay = () => { const v = db && db.settings && db.settings.weighDay; return v == null || isNaN(v) ? 5 : +v; };
+const weekStart = s => { const d = parseD(s), first = (weighDay() + 1) % 7; d.setDate(d.getDate() - (d.getDay() - first + 7) % 7); return dstr(d); };
+const weekLabel = () => `${DAYS[(weighDay() + 1) % 7].slice(0, 3)}–${DAYS[weighDay()].slice(0, 3)}`;
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 function toast(msg) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -1153,10 +1169,12 @@ const ICONS = {
   weight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8.5 9.5a5 5 0 0 1 7 0"/><path d="M12 9.5 13.2 7.6"/></svg>',
   food: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M10 2h4"/></svg>',
   fitness: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  coach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
   labs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21.5h11.6a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7 15h10"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
 };
-const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Meals"], ["fitness", "Fitness"], ["labs", "Labs"]];
+const TABS = [["home", "Home"], ["weight", "Weight"], ["food", "Fast & Meals"], ["fitness", "Fitness"], ["coach", "Coach"]];
+const TITLES = { home: "Dashboard", settings: "Settings", labs: "Labs & blood work" };
 let current = "home";
 try { current = localStorage.getItem(KEY + ".tab") || "home"; } catch (e) {}
 let wView = "daily";
@@ -1173,13 +1191,13 @@ function greeting() {
   return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + (db.settings.name ? ", " + db.settings.name : "") + " · " + new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 function render() {
-  const views = { home: viewHome, weight: viewWeight, food: viewFood, fitness: viewFitness, labs: viewLabs, settings: viewSettings };
+  const views = { home: viewHome, weight: viewWeight, food: viewFood, fitness: viewFitness, coach: viewCoach, labs: viewLabs, settings: viewSettings };
   if (!views[current]) current = "home";
   const setup = needsSetup();
   document.body.classList.toggle("setup", setup);
-  if (setup) { $("#eyebrow").textContent = "Momentum"; $("#title").textContent = "Welcome"; $("#view").innerHTML = viewSetup(); $("#tabs").innerHTML = ""; rendered = null; return; }
+  if (setup) { $("#eyebrow").textContent = "Momentum"; $("#title").textContent = "Welcome"; $("#view").innerHTML = showInstall() ? viewInstall() : viewSetup(); $("#tabs").innerHTML = ""; rendered = null; return; }
   $("#eyebrow").textContent = greeting();
-  $("#title").textContent = current === "settings" ? "Settings" : current === "home" ? "Dashboard" : TABS.find(t => t[0] === current)[1];
+  $("#title").textContent = TITLES[current] || TABS.find(t => t[0] === current)[1];
   renderDatalists();
   // keep expandable sections as you left them when redrawing the same tab
   const was = rendered === current ? [...document.querySelectorAll("#view details[id]")].map(d => [d.id, d.open]) : [];
@@ -1204,6 +1222,24 @@ function go(tab, focus) {
 // First-time setup
 // =====================================================================
 const needsSetup = () => !db.settings.setupDone || !db.settings.startWeight;
+const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+let browserOk = false;
+try { browserOk = localStorage.getItem(KEY + ".browserOk") === "1"; } catch (e) {}
+const showInstall = () => isPhone() && !isStandalone() && !browserOk;
+function viewInstall() {
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const shareIcon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M12 3v13"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  return `<div class="card hero" style="text-align:center">${document.querySelector("header .logo").outerHTML.replace('class="logo"', 'class="logo" style="width:84px;height:84px;margin:6px auto 10px;display:block"')}
+    <h2 style="justify-content:center">Install Momentum</h2>
+    <p class="muted" style="margin-top:0">Add Momentum to your home screen so it opens like an app, full screen.</p></div>
+  <div class="card"><ol class="steps">
+    <li><span>1</span><div>Tap <b>Share</b> ${shareIcon} ${ios ? "in Safari's toolbar" : "or your browser's menu ⋮"}.</div></li>
+    <li><span>2</span><div>Scroll down and tap <b>Add to Home Screen</b>.</div></li>
+    <li><span>3</span><div>Open <b>Momentum</b> from your home screen.</div></li></ol>
+    <div class="banner" style="margin:14px 0 0">Your data is saved inside the app you use. Entries made here in ${ios ? "Safari" : "the browser"} stay in ${ios ? "Safari" : "the browser"} and won't show up in the home-screen app, so it's best to set up from the home screen.</div></div>
+  <button class="btn ghost block" data-act="browserOk">Continue in browser anyway</button>`;
+}
 const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,.txt,application/json,text/plain" data-act="import" style="display:none"></label>`;
 function viewSetup() {
   const s = db.settings;
@@ -1224,6 +1260,8 @@ function viewSetup() {
         <label>Sex<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label>
       </div>
       <p class="faint" style="margin-top:-4px">Height, age and sex personalize calorie-burn estimates and fitness norms.</p>
+      <label>Weigh-in day<select name="weighDay">${DAYS.map((d, i) => `<option value="${i}"${i === weighDay() ? " selected" : ""}>${d}</option>`).join("")}</select></label>
+      <p class="faint" style="margin-top:-4px">Your weeks end on this day, so weekly averages and your weekly recap line up with your weigh-in.</p>
       <label>Goal weights (lb, comma separated — the lowest is your final goal)<input name="goals" value="${esc((s.goals || []).join(", "))}" placeholder="e.g. 200, 190, 180" required inputmode="decimal"></label>
       <p class="muted" style="margin:14px 0 6px">Do you have an injury that should lock upper-body exercises (push-ups, presses, rows) until a PT or doctor clears you?</p>
       <div class="seg" role="radiogroup">
@@ -1313,7 +1351,7 @@ function viewHome() {
     <div style="flex:1"><div><span class="v">${st.n}</span> <b>day${st.n === 1 ? "" : "s"} in a row</b></div>
       <div class="faint">${st.n ? (st.todayDone ? "Logged today — nice." : "Log anything today to keep it going.") : "Log anything today to start a streak."}${st.best > 1 ? ` Best: ${st.best} days.` : ""}</div></div></div>`; })()}
   <button class="btn secondary block" data-act="clipSync" style="margin-bottom:12px">⟳ Sync from Health</button>
-  ${(() => { const f = lastFridayWithWeighIn(); return f ? `<button class="btn ghost block small" data-act="recap" data-d="${f}" style="margin:-4px 0 12px">🎉 See this week's recap</button>` : ""; })()}
+  ${(() => { const f = lastWeighDayWithWeighIn(); return f ? `<button class="btn ghost block small" data-act="recap" data-d="${f}" style="margin:-4px 0 12px">🎉 See this week's recap</button>` : ""; })()}
   ${(() => { const age = backupAgeDays(); return age == null || age > 14 ? `<button class="banner warn" data-tab="settings" style="display:block;width:100%;text-align:left;border:0;font:inherit;cursor:pointer">${age == null ? "<b>No backup yet.</b>" : `<b>Last backup ${age} days ago.</b>`} Your data lives only in this browser — tap to save a backup file.</button>` : ""; })()}
   <div class="actions">
     <button data-act="quick" data-go="weight" data-focus="logWeight">${ICONS.plus}Log weight</button>
@@ -1338,7 +1376,8 @@ function viewHome() {
       <div class="bar ${cardio >= s.cardioTarget ? "good" : ""}"><span style="width:${Math.min(100, cardio / s.cardioTarget * 100)}%"></span></div></button>
     <button class="tile" data-tab="food"><div class="label">Calories today</div>
       <div class="value n">${en.in}<small>/ ${en.out}</small></div>
-      <div class="sub">${en.n ? (en.in <= en.out ? `${en.out - en.in} under (est.)` : `${en.in - en.out} over (est.)`) : "in / out — tap to log food"}</div></button>
+      <div class="sub">${en.n ? (en.in <= en.out ? `${en.out - en.in} under (est.)` : `${en.in - en.out} over (est.)`) : "in / out — tap to log food"}</div>
+      <div class="sub">out = ${en.out - en.ex} rest${en.ex ? ` + ${en.ex} exercise` : ""}</div></button>
     <button class="tile" data-tab="food"><div class="label">Protein today</div>
       <div class="value n">${en.protein}<small>/ ${s.proteinTarget} g</small></div>
       <div class="sub">${en.protein >= s.proteinTarget ? "Target hit 💪" : `${r1n(s.proteinTarget - en.protein)} g to go`}</div>
@@ -1351,7 +1390,7 @@ function viewHome() {
       <div class="value n">${coreSets}<small>sets</small></div>
       <div class="sub">${coreWk.length ? `${coreWk.length} exercise${coreWk.length === 1 ? "" : "s"} logged` : "Tap to log"}</div></button>
   </div>
-  <button class="tile" data-tab="labs" style="margin-bottom:14px"><div class="label">Blood work</div>
+  <button class="tile" data-tab="labs" style="margin-bottom:14px"><div class="label">Labs &amp; blood work ›</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     ${evals.length ? `${nBad ? `<span class="st bad"><i>!!</i>${nBad} need${nBad === 1 ? "s" : ""} attention</span>` : ""}
       ${nWarn ? `<span class="st warn"><i>!</i>${nWarn} borderline</span>` : ""}
@@ -1384,8 +1423,8 @@ function viewWeight() {
   return `
   <div class="stats3">
     <div class="tile"><div class="label">Lost</div><div class="value n down">${lost != null ? r1(lost) : "—"}<small>lb</small></div><div class="sub">since ${fmtD(s.startDate)}</div></div>
-    <div class="tile"><div class="label">Week avg</div><div class="value n">${r1(thisW.avg)}</div><div class="sub">${thisW.n} wake-up reading${thisW.n === 1 ? "" : "s"}</div></div>
-    <div class="tile"><div class="label">vs last wk</div><div class="value n ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${signed(wd)}</div><div class="sub">week avg change</div></div>
+    <div class="tile"><div class="label">Week avg</div><div class="value n">${r1(thisW.avg)}</div><div class="sub">${thisW.n} weigh-in${thisW.n === 1 ? "" : "s"}</div></div>
+    <div class="tile"><div class="label">Change</div><div class="value n ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${signed(wd)}</div><div class="sub">vs last wk</div></div>
   </div>
   <div class="card">
     <h2>Weight trend</h2>
@@ -1397,9 +1436,9 @@ function viewWeight() {
       <span><i class="lg-goal"></i>Goals</span></div>
     <p class="faint" style="margin:8px 0 0">${wView === "daily" ? "Last 30 days. " : ""}The trend uses wake-up readings only. Post-walk and other readings are shown but not averaged in.</p>
   </div>
-  <div class="card"><h2>Weekly summary <small>Mon–Sun · wake-up readings</small></h2>
-    ${weeks.length ? `<table><thead><tr><th>Week of</th><th>Avg</th><th>Change</th><th>#</th></tr></thead><tbody>
-      ${weeks.map(w => `<tr><td>${fmtD(w.start)}${w.start === weekStart(t) ? ' <span class="tag red">Now</span>' : ""}</td><td class="v">${r1(w.avg)}</td>
+  <div class="card"><h2>Weekly summary <small>${weekLabel()} · wake-up</small></h2>
+    ${weeks.length ? `<table><thead><tr><th>Week ending</th><th>Avg</th><th>Change</th><th>#</th></tr></thead><tbody>
+      ${weeks.map(w => `<tr><td>${fmtD(addDays(w.start, 6))}${w.start === weekStart(t) ? ' <span class="tag red">Now</span>' : ""}</td><td class="v">${r1(w.avg)}</td>
       <td class="v ${w.chg == null ? "" : w.chg <= 0 ? "down" : "up"}">${w.chg == null ? '<span class="faint">—</span>' : signed(w.chg)}</td><td class="faint">${w.n}</td></tr>`).join("")}</tbody></table>
       <p class="faint" style="margin:8px 0 0">"Change" compares with the week before; blank when that week had no wake-up readings.</p>` : `<p class="faint">No wake-up readings yet.</p>`}
   </div>
@@ -1559,7 +1598,7 @@ function parseMeal(text) {
 function presetRows(p, mult = 1, text) {
   return p.items.map(it => {
     const r = { text: text || p.name, src: "preset", foodId: foodById(it.foodId) ? it.foodId : null, name: it.name, custom: !foodById(it.foodId),
-      servings: r1n(it.servings * mult * 100) / 100, cal: Math.round(it.cal * mult), protein: r1n(it.protein * mult) };
+      servings: r1n((it.servings || 1) * mult * 100) / 100, cal: Math.round((it.cal || 0) * mult), protein: r1n((it.protein || 0) * mult) };
     return r;
   });
 }
@@ -1585,7 +1624,8 @@ async function offSearch(q) {
   return (isCode ? (d.product ? [d.product] : []) : d.products || []).map(offFood).filter(Boolean);
 }
 // The meal being entered, kept outside the DOM so re-renders don't lose it
-const newDraft = () => { const n = new Date(); return { date: today(), time: `${pad(n.getHours())}:${pad(n.getMinutes())}`, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "" }; };
+const nowHM = () => { const n = new Date(); return `${pad(n.getHours())}:${pad(n.getMinutes())}`; };
+const newDraft = () => ({ date: today(), time: nowHM(), dateTouched: false, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "", autoEst: false, nudge: false, force: false });
 let draft = newDraft();
 let mealFormOpen = null; // remembers whether you left "Log a meal" open
 const draftTotals = () => ({ cal: draft.rows.reduce((a, r) => a + (r.cal || 0), 0), protein: r1n(draft.rows.reduce((a, r) => a + (r.protein || 0), 0)) });
@@ -1595,7 +1635,7 @@ function draftHtml() {
   return draft.rows.map((r, i) => {
     const f = foodById(r.foodId), ok = f || r.custom;
     return `<div class="frow ${ok ? "" : "unmatched"}">
-      <div class="frow-top">${ok ? '<span class="tag">Estimated</span>' : '<span class="st warn"><i>!</i>No match — pick a food</span>'}
+      <div class="frow-top">${ok ? '<span class="tag">Estimated</span>' : '<span class="st warn"><i>!</i>No match — pick a food or type calories</span>'}
         <span class="faint grow" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">“${esc(r.text)}”</span>
         <button type="button" class="x" data-act="rmRow" data-i="${i}" aria-label="Remove">×</button></div>
       <label>Food<select data-row="${i}" data-f="foodId">${r.custom ? `<option value="" selected>${esc(r.name)} (saved values)</option>` : '<option value="">— pick a food —</option>'}${foodOptions(r.foodId)}</select></label>
@@ -1606,7 +1646,9 @@ function draftHtml() {
       </div></div>`; }).join("")
     + (draft.rows.length ? `<div class="ftotal" id="draftTotal">Estimated total: <b class="n" style="font-size:20px">${tot.cal} cal</b> · <b class="n" style="font-size:20px">${tot.protein} g protein</b>
         ${bad ? `<div style="color:var(--warn);margin-top:4px">${bad} item${bad === 1 ? "" : "s"} not matched yet.</div>` : ""}</div>
-      <label>Save as one of My Foods (optional)<input data-draft="presetName" value="${esc(draft.presetName)}" placeholder="e.g. Usual breakfast"></label>` : "");
+      <label>Save as one of My Foods (optional)<input data-draft="presetName" value="${esc(draft.presetName)}" placeholder="e.g. Usual breakfast"></label>` : "")
+    + (draft.nudge ? `<div class="banner warn" id="mealNudge" style="margin-top:12px"><b>${draftTotals().cal || draft.rows.some(r => r.cal != null) ? "Some items have no calories yet." : "No calories or protein yet."}</b> Pick a food from the list, type the numbers in, or scan the package barcode — or save it as is.
+      <div class="btn-row" style="margin-top:10px"><button type="button" class="btn secondary small" data-act="scanStart">📷 Scan barcode</button><button type="button" class="btn ghost small" data-act="saveAnyway">Save without them</button></div></div>` : "");
 }
 function offHtml() {
   if (draft.searching) return `<p class="faint">Searching Open Food Facts…</p>`;
@@ -1623,7 +1665,12 @@ function updateDraftTotal() {
   const tot = draftTotals(); el.querySelectorAll("b")[0].textContent = tot.cal + " cal"; el.querySelectorAll("b")[1].textContent = tot.protein + " g protein";
 }
 function draftInput(el) {
-  if (el.dataset.draft) { draft[el.dataset.draft] = el.type === "checkbox" ? el.checked : el.value; return true; }
+  if (el.dataset.draft) {
+    const k = el.dataset.draft; draft[k] = el.type === "checkbox" ? el.checked : el.value;
+    if (k === "date" || k === "time") draft.dateTouched = true;
+    if (k === "text") { draft.autoEst = false; draft.nudge = false; }
+    return true;
+  }
   if (el.dataset.row == null) return false;
   const r = draft.rows[+el.dataset.row], f = el.dataset.f; if (!r) return true;
   if (f === "foodId") {
@@ -1638,20 +1685,34 @@ function draftInput(el) {
   updateDraftTotal(); return true;
 }
 function saveMeal() {
-  const bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
-  if (bad) { alert(`Pick a food for the ${bad} flagged item${bad === 1 ? "" : "s"}, or remove ${bad === 1 ? "it" : "them"}.`); return false; }
   if (!draft.rows.length && !draft.text.trim()) { alert("Describe what you ate, or add some foods."); return false; }
-  const items = draft.rows.map(r => { const f = foodById(r.foodId); return { foodId: r.foodId, name: f ? f.name : r.name, servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }; });
-  const tot = draftTotals();
-  db.meals.push({ id: uid(), date: draft.date || today(), time: draft.time || "12:00", text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
-    items, cal: items.length ? tot.cal : null, protein: items.length ? tot.protein : null, est: true });
+  // a description with no rows yet: estimate it first so the meal gets calories
+  if (!draft.rows.length && !draft.autoEst) {
+    draft.autoEst = true;
+    const rows = parseMeal(draft.text);
+    if (rows.length) {
+      draft.rows = rows; draft.nudge = rows.some(r => r.cal == null); refreshDraft();
+      toast(draft.nudge ? "Some items need calories — see below" : "Estimated from your description — check it, then tap Save meal"); return false;
+    }
+  }
+  const known = draft.rows.filter(r => r.cal != null);
+  if ((!known.length || known.length < draft.rows.length) && !draft.force) {
+    draft.nudge = true; refreshDraft();
+    const n = $("#mealNudge"); if (n) n.scrollIntoView({ block: "center", behavior: "smooth" });
+    return false;
+  }
+  const items = draft.rows.map(r => { const f = foodById(r.foodId);
+    return { foodId: r.foodId, name: f ? f.name : r.name || r.text, servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }; });
+  const tot = draftTotals(), date = draft.dateTouched ? draft.date || today() : today(), time = draft.dateTouched ? draft.time || nowHM() : nowHM();
+  db.meals.push({ id: uid(), date, time, text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
+    items, cal: known.length ? tot.cal : null, protein: known.length ? tot.protein : null, est: true });
   const pn = draft.presetName.trim();
   if (pn && items.length) {
     const ex = db.presets.find(x => exKey(x.name) === exKey(pn));
     if (ex) ex.items = items; else db.presets.push({ id: uid(), name: pn, items });
   }
   save(); draft = newDraft();
-  toast(pn && items.length ? `Meal saved · “${pn}” added to My Foods` : items.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved");
+  toast(pn && items.length ? `Meal saved · “${pn}” added to My Foods` : known.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved without calories — you can add them later with ✎");
 }
 // Calories out: resting burn (Mifflin-St Jeor × 1.2, or your own number) + logged exercise
 const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWeight; };
@@ -1737,6 +1798,7 @@ function energyCard() {
   </div>`;
 }
 function viewFood() {
+  if (!draft.dateTouched) { draft.date = today(); draft.time = nowHM(); }
   const s = db.settings, now = Date.now(), t = today();
   const active = db.fasts.find(f => !f.end);
   const done = db.fasts.filter(f => f.end).sort((a, b) => b.start.localeCompare(a.start));
@@ -1783,12 +1845,13 @@ function viewFood() {
       <form data-form="meal">
         <div class="row"><label>Date<input type="date" data-draft="date" value="${esc(draft.date)}" required></label><label>Time<input type="time" data-draft="time" value="${esc(draft.time)}" required></label></div>
         <label>What did you eat?<textarea data-draft="text" rows="2" placeholder="e.g. 2 sweet potatoes, 7 meatballs, 1 tbsp peanut butter">${esc(draft.text)}</textarea></label>
-        <button type="button" class="btn secondary block" data-act="estimate">Estimate calories &amp; protein</button>
+        <div class="btn-row"><button type="button" class="btn secondary" data-act="estimate" style="flex:2">Estimate</button><button type="button" class="btn secondary" data-act="scanStart" style="flex:1">📷 Scan</button></div>
         ${db.presets.length ? `<p class="faint" style="margin:14px 0 6px">My Foods — tap to add</p><div class="chips">${db.presets.map(p => `<button type="button" class="chip" data-act="addPreset" data-id="${esc(p.id)}">${esc(p.name)}</button>`).join("")}</div>` : ""}
         <details id="offBox" style="margin-top:12px" ${draft.q || draft.results ? "open" : ""}><summary>Branded product (Open Food Facts)</summary>
           <div class="row"><label style="flex:3 1 160px">Product name or barcode<input data-draft="q" value="${esc(draft.q)}" placeholder="e.g. fairlife core power" enterkeyhint="search"></label>
             <button type="button" class="btn secondary small" data-act="offSearch" style="align-self:center;margin-top:8px">Search</button></div>
-          <div id="offResults">${offHtml()}</div></details>
+          <div id="offResults">${offHtml()}</div>
+          <p class="faint" style="margin-top:8px">Product data from <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (Open Database License).</p></details>
         <div id="draft">${draftHtml()}</div>
         <label class="check" style="margin-top:12px"><input type="checkbox" data-draft="cheat"${draft.cheat ? " checked" : ""}>This was a cheat meal</label>
         <button class="btn block" style="margin-top:10px">Save meal</button>
@@ -1830,7 +1893,7 @@ function weekBars(arr, target) {
     <div class="weeks-labels">${weeks.map(w => `<span>${w.m}<br>${fmtD(w.start)}</span>`).join("")}</div>`;
 }
 function weekHero(title, mins, target, form, list) {
-  return `<div class="card hero"><h2>${title} <small>Mon–Sun</small></h2>
+  return `<div class="card hero"><h2>${title} <small>${weekLabel()}</small></h2>
     <div class="big">${mins}<small> / ${target} min</small></div>
     <div class="faint" style="margin-bottom:12px">${mins >= target ? "Weekly target hit 🔥" : `${target - mins} min to go`}</div>
     <div class="bar ${mins >= target ? "good" : ""}"><span style="width:${Math.min(100, mins / target * 100)}%"></span></div>
@@ -1858,9 +1921,9 @@ const exRow = k => x => `<li><div class="grow"><div><b>${esc(x.ex)}</b> ${x.area
   <div class="faint">${fmtDay(x.date)} · ${setsTxt(x)}</div></div>${x.min ? `<span class="num">${x.min} min</span>` : ""}${btnsFor(k, x)}</li>`;
 const goalsLink = `<small><a href="#" data-tab="settings">Edit in Settings</a></small>`;
 function viewFitness() {
-  if (fView === "core") fView = "strength";
-  const seg = `<div class="seg">${[["cardio", "Cardio"], ["strength", "Strength"], ["coach", "Coach"]].map(([k, l]) => `<button class="${fView === k ? "on" : ""}" data-act="fview" data-v="${k}">${l}</button>`).join("")}</div>`;
-  return seg + (fView === "strength" ? fitStrength() + fitCore() + guideCard() : fView === "coach" ? viewCoach() : fitCardio());
+  if (fView !== "strength") fView = "cardio";
+  const seg = `<div class="seg">${[["cardio", "Cardio"], ["strength", "Strength"]].map(([k, l]) => `<button class="${fView === k ? "on" : ""}" data-act="fview" data-v="${k}">${l}</button>`).join("")}</div>`;
+  return seg + (fView === "strength" ? fitStrength() + fitCore() + guideCard() : fitCardio());
 }
 function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
@@ -2308,11 +2371,11 @@ const coachForms = {
 // Weekly recap after the Friday weigh-in
 // =====================================================================
 let pendingRecap = null;
-const isFriday = d => parseD(d).getDay() === 5;
-function maybeRecap(date) { if (isFriday(date) && date >= addDays(today(), -2) && db.settings.lastRecap !== date) pendingRecap = date; }
-const lastFridayWithWeighIn = () => { for (let i = 0; i < 7; i++) { const d = addDays(today(), -i); if (isFriday(d)) return db.weights.some(w => w.date === d) ? d : null; } return null; };
+const isWeighDay = d => parseD(d).getDay() === weighDay();
+function maybeRecap(date) { if (isWeighDay(date) && date >= addDays(today(), -2) && db.settings.lastRecap !== date) pendingRecap = date; }
+const lastWeighDayWithWeighIn = () => { for (let i = 0; i < 7; i++) { const d = addDays(today(), -i); if (isWeighDay(d)) return db.weights.some(w => w.date === d) ? d : null; } return null; };
 function recapData(fri) {
-  const s = db.settings, start = addDays(fri, -6);
+  const s = db.settings, start = weekStart(fri);
   const pick = d => db.weights.filter(w => w.date === d).sort((a, b) => (a.type === "wake" ? -1 : 1))[0];
   const cur = pick(fri);
   const before = allWeights().filter(w => w.date < start || w.date === addDays(fri, -7)).filter(w => w.date >= addDays(fri, -10) && w.date <= addDays(fri, -7));
@@ -2337,7 +2400,7 @@ function showRecap(fri) {
     <div class="faint" style="text-transform:uppercase;letter-spacing:.12em;font-weight:700;font-size:12px">Week of ${fmtD(r.start)} – ${fmtD(r.fri)}</div>
     <h3 class="rc" style="--d:0s">${title}</h3>
     <div class="recap-grid">
-      <div class="rc" style="--d:.15s"><div class="faint">Weight change</div><div class="n big2 ${r.change == null ? "" : r.change <= 0 ? "down" : "up"}" data-count="${r.change == null ? "" : Math.abs(r.change)}" data-pre="${r.change == null ? "" : r.change <= 0 ? "−" : "+"}" data-dec="1">${r.change == null ? "—" : ""}</div><div class="faint">${r.cur ? `${r1(r.cur.w)} lb on Friday` : ""}</div></div>
+      <div class="rc" style="--d:.15s"><div class="faint">Weight change</div><div class="n big2 ${r.change == null ? "" : r.change <= 0 ? "down" : "up"}" data-count="${r.change == null ? "" : Math.abs(r.change)}" data-pre="${r.change == null ? "" : r.change <= 0 ? "−" : "+"}" data-dec="1">${r.change == null ? "—" : ""}</div><div class="faint">${r.cur ? `${r1(r.cur.w)} lb on ${DAYS[weighDay()]}` : ""}</div></div>
       <div class="rc" style="--d:.3s"><div class="faint">Cardio</div><div class="n big2" data-count="${r.cardio}">0</div><div class="faint">of ${s.cardioTarget} min goal</div></div>
       <div class="rc" style="--d:.45s"><div class="faint">Workouts</div><div class="n big2" data-count="${r.workouts}">0</div><div class="faint">${r.strength ? `${r.strength} strength min` : "sessions logged"}</div></div>
       <div class="rc" style="--d:.6s"><div class="faint">Goal progress</div><div class="n big2" data-count="${r.pct == null ? "" : Math.round(r.pct)}" data-suf="%">${r.pct == null ? "—" : ""}</div><div class="faint">${r.next ? `${r1(r.cur.w - r.next)} lb to ${r.next}` : r.finalG ? "goal reached 🎉" : ""}</div></div>
@@ -2385,9 +2448,11 @@ function decorateCards(root) {
     while (h.nextSibling) body.appendChild(h.nextSibling);
     card.appendChild(body);
     const lead = document.createElement("span"); lead.className = "ct";
-    lead.innerHTML = '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     [...h.childNodes].filter(n => n.nodeType === 3).forEach(n => lead.appendChild(n));
-    h.prepend(lead);
+    const right = document.createElement("span"); right.className = "cr";
+    [...h.childNodes].forEach(n => right.appendChild(n));
+    right.insertAdjacentHTML("beforeend", '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    h.append(lead, right);
     const isC = key in collapsed ? collapsed[key] : COLLAPSED_BY_DEFAULT.has(title);
     card.classList.add("foldable"); card.classList.toggle("collapsed", isC);
     h.dataset.key = key; h.tabIndex = 0; h.setAttribute("role", "button"); h.setAttribute("aria-expanded", String(!isC));
@@ -2402,17 +2467,167 @@ function toggleCard(h) {
 }
 
 // =====================================================================
+// Barcode scanning (EAN-13 / UPC-A / EAN-8) → Open Food Facts → confirm → meal
+// =====================================================================
+// Decoder: reads bar widths along horizontal lines of a camera frame. Uses the browser's BarcodeDetector when it has one.
+const EAN_L = ["3211", "2221", "2122", "1411", "1132", "1231", "1114", "1312", "1213", "3112"].map(x => [...x].map(Number));
+const EAN_FIRST = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"];
+function eanDigit(w, allowG) {
+  const sum = w[0] + w[1] + w[2] + w[3], n = w.map(x => x * 7 / sum);
+  let best = null;
+  for (let d = 0; d < 10; d++) for (const [par, pat] of allowG ? [["L", EAN_L[d]], ["G", [...EAN_L[d]].reverse()]] : [["L", EAN_L[d]]]) {
+    const err = pat.reduce((a, v, i) => a + Math.abs(v - n[i]), 0);
+    if (!best || err < best.err) best = { d, par, err };
+  }
+  return best && best.err < 1.6 ? best : null;
+}
+const eanCheck = code => { const d = [...code].map(Number), last = d.pop();
+  const sum = d.reverse().reduce((a, v, i) => a + v * (i % 2 === 0 ? 3 : 1), 0); return (10 - sum % 10) % 10 === last; };
+const near = (v, m) => v > m * 0.45 && v < m * 1.9;
+function eanFromRuns(lens, dark) {
+  for (const n of [6, 4]) { // EAN-13/UPC-A (6+6 digits), EAN-8 (4+4)
+    const need = 3 + n * 4 + 5 + n * 4 + 3;
+    for (let i = 1; i + need <= lens.length; i++) {
+      if (!dark[i]) continue;
+      const m = (lens[i] + lens[i + 1] + lens[i + 2]) / 3;
+      if (!near(lens[i], m) || !near(lens[i + 1], m) || !near(lens[i + 2], m) || lens[i - 1] < m * 2.5) continue;
+      let j = i + 3, digits = "", par = "", ok = true;
+      for (let k = 0; k < n && ok; k++, j += 4) { const r = eanDigit(lens.slice(j, j + 4), n === 6); if (!r) ok = false; else { digits += r.d; par += r.par; } }
+      if (!ok || ![0, 1, 2, 3, 4].every(q => near(lens[j + q], m))) continue;
+      j += 5;
+      for (let k = 0; k < n && ok; k++, j += 4) { const r = eanDigit(lens.slice(j, j + 4), false); if (!r) ok = false; else digits += r.d; }
+      if (!ok || ![0, 1, 2].every(q => near(lens[j + q], m))) continue;
+      let code = digits;
+      if (n === 6) { const f = EAN_FIRST.indexOf(par); if (f < 0) continue; code = f + digits; }
+      if (eanCheck(code)) return code;
+    }
+  }
+  return null;
+}
+function decodeEAN(img) { // img: ImageData
+  const { width: W, height: H, data } = img;
+  for (let k = 0; k < 15; k++) {
+    const y = Math.round(H * (0.5 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.03)); if (y < 0 || y >= H) continue;
+    const row = new Float32Array(W);
+    for (let x = 0; x < W; x++) { const o = (y * W + x) * 4; row[x] = data[o] * 0.299 + data[o + 1] * 0.587 + data[o + 2] * 0.114; }
+    let lo = 255, hi = 0; for (let x = Math.floor(W * 0.05); x < W * 0.95; x++) { lo = Math.min(lo, row[x]); hi = Math.max(hi, row[x]); }
+    if (hi - lo < 40) continue;
+    const thr = (lo + hi) / 2, lens = [], dark = [];
+    let cur = row[0] < thr, len = 0;
+    for (let x = 0; x < W; x++) { const d = row[x] < thr; if (d === cur) len++; else { lens.push(len); dark.push(cur); cur = d; len = 1; } }
+    lens.push(len); dark.push(cur);
+    const code = eanFromRuns(lens, dark) || eanFromRuns([...lens].reverse(), [...dark].reverse());
+    if (code) return code;
+  }
+  return null;
+}
+let scanState = null; // { stream, timer, last, hits }
+async function startScan() {
+  stopScan();
+  const el = document.createElement("div"); el.id = "scanner";
+  el.innerHTML = `<div class="scan-top"><b>Scan a barcode</b><button class="icon-btn" data-act="scanClose" aria-label="Close">✕</button></div>
+    <div class="scan-view"><video playsinline muted autoplay></video><div class="scan-box"></div></div>
+    <p class="scan-msg">Hold the barcode flat and level inside the frame.</p>
+    <form class="scan-manual" data-form="scanManual"><input name="code" inputmode="numeric" pattern="[0-9 ]*" placeholder="Or type the barcode number"><button class="btn secondary small">Look up</button></form>
+    <p class="faint" style="text-align:center;margin:8px 0 0">Product data from <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a></p>`;
+  document.body.appendChild(el);
+  const video = $("video", el), msg = $(".scan-msg", el);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = "This browser can't use the camera here — type the barcode number below."; return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if (!$("#scanner")) { stream.getTracks().forEach(t => t.stop()); return; }
+    video.srcObject = stream; await video.play().catch(() => {});
+    const detector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["ean_13", "upc_a", "ean_8", "upc_e"] }) : null;
+    const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+    scanState = { stream, hits: 0, last: null };
+    const tick = async () => {
+      if (!scanState || !video.videoWidth) { if (scanState) scanState.timer = setTimeout(tick, 200); return; }
+      let code = null;
+      try {
+        if (detector) { const r = await detector.detect(video); code = r[0] && r[0].rawValue; }
+        else { const w = 800, h = Math.round(video.videoHeight * w / video.videoWidth); canvas.width = w; canvas.height = h; ctx.drawImage(video, 0, 0, w, h); code = decodeEAN(ctx.getImageData(0, 0, w, h)); }
+      } catch (e) {}
+      if (code && (detector || code === scanState.last)) { foundCode(code); return; }
+      scanState.last = code; scanState.timer = setTimeout(tick, 120);
+    };
+    tick();
+  } catch (e) { msg.textContent = "Camera not available (" + (e.name === "NotAllowedError" ? "permission denied" : e.message) + "). Type the barcode number below."; }
+}
+function stopScan() {
+  if (scanState) { clearTimeout(scanState.timer); scanState.stream && scanState.stream.getTracks().forEach(t => t.stop()); scanState = null; }
+  const el = $("#scanner"); if (el) el.remove();
+}
+let openScan = null; // product being confirmed in the bottom sheet
+async function foundCode(raw) {
+  const code = String(raw).replace(/\D/g, "");
+  stopScan();
+  if (navigator.vibrate) navigator.vibrate(60);
+  const mine = db.foods.find(f => f.code && f.code.replace(/^0+/, "") === code.replace(/^0+/, ""));
+  if (mine) { openScan = { code, src: "mine", foodId: mine.id, name: mine.name, serving: mine.serving, cal: mine.cal, protein: mine.protein }; renderSheet(); return; }
+  openScan = { code, src: "loading" }; renderSheet();
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`);
+    const d = r.ok || r.status === 404 ? await r.json() : null;
+    if (!d) throw new Error("Open Food Facts returned " + r.status);
+    const p = d.product;
+    if (!p || d.status === 0) { openScan = { code, src: "none" }; renderSheet(); return; }
+    const f = offFood(p), brand = p.brands ? String(p.brands).split(",")[0].trim() : "";
+    openScan = f ? { code, src: "off", name: f.name, serving: f.serving, cal: f.cal, protein: f.protein }
+      : { code, src: "partial", name: [brand, p.product_name].filter(Boolean).join(" "), serving: p.serving_size || "1 serving", cal: null, protein: null };
+  } catch (e) { openScan = { code, src: "error", err: e.message }; }
+  renderSheet();
+}
+function scanSheet() {
+  const o = openScan; if (!o) return "";
+  const head = `<div class="grab"></div><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+    <div><div class="faint" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700;font-size:12px">Barcode ${esc(o.code)}</div><h3>${o.src === "loading" ? "Looking up…" : o.src === "none" || o.src === "error" ? "Not found" : "Check the label"}</h3></div>
+    <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>`;
+  if (o.src === "loading") return head + `<p class="muted">Searching Open Food Facts…</p>`;
+  const note = { mine: "From your saved foods.", off: "Filled in from Open Food Facts — check it against your package and edit anything that's off.",
+    partial: "Open Food Facts knows this product but has no calorie data. Add the numbers from the label.",
+    none: "This barcode isn't in Open Food Facts yet. Enter it from the label and it'll be saved for next time.",
+    error: `Couldn't reach Open Food Facts (${esc(o.err || "")}). Enter it from the label, or try again later.` }[o.src];
+  return head + `<p class="muted" style="margin-top:8px">${note}</p>
+    <form data-form="scanAdd">
+      <label>Food name<input name="name" value="${esc(o.name || "")}" required placeholder="e.g. Brand protein bar"></label>
+      <label>Serving size<input name="serving" value="${esc(o.serving || "")}" required placeholder="e.g. 1 bar (60 g)"></label>
+      <div class="row">
+        <label>Calories per serving<input name="cal" type="number" step="any" min="0" inputmode="decimal" value="${o.cal ?? ""}" required></label>
+        <label>Protein g per serving<input name="protein" type="number" step="any" min="0" inputmode="decimal" value="${o.protein ?? ""}"></label></div>
+      <label>Servings you ate<input name="servings" type="number" step="any" min="0" inputmode="decimal" value="1" required></label>
+      <button class="btn block">Add to meal</button></form>
+    <p class="faint" style="margin-top:14px">Product data from <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>, a free database made by contributors and available under the Open Database License.</p>`;
+}
+const scanForms = {
+  scanManual(f) { const c = String(f.get("code") || "").replace(/\D/g, ""); if (c.length < 8) { toast("Barcodes are 8 to 14 digits"); return false; } foundCode(c); return false; },
+  scanAdd(f) {
+    const o = openScan; if (!o) return;
+    const vals = { name: String(f.get("name")).trim(), serving: String(f.get("serving")).trim(), cal: Math.round(num(f.get("cal")) || 0), protein: r1n(num(f.get("protein")) || 0) };
+    let food = o.foodId && foodById(o.foodId);
+    if (!food) food = db.foods.find(x => x.code && x.code === o.code);
+    if (food) Object.assign(food, vals);
+    else { food = { id: uid(), ...vals, amt: 1, unit: "serving", aliases: [], src: o.src === "off" ? "off" : "custom", code: o.code }; db.foods.push(food); }
+    const servings = num(f.get("servings")) || 1;
+    draft.rows.push(calcRow({ text: food.name, src: "scan", foodId: food.id, servings }));
+    draft.nudge = false; mealFormOpen = true; openScan = null; save();
+    if (current !== "food") current = "food";
+    toast(o.src === "off" || o.src === "mine" ? "Added — review and save the meal" : "Saved to your food list and added to the meal");
+  }
+};
+
+// =====================================================================
 // Labs tab
 // =====================================================================
 const DISCLAIMER = `<div class="banner"><b>General information, not medical advice.</b> Ranges and explanations come from public health sources and are meant to help you understand your report. They can't account for your full health picture — always review results with your doctor.</div>`;
 function viewLabs() {
   const g = labGroups();
+  const back = `<p class="faint" style="margin:0 0 12px"><a href="#" data-tab="home">← Home</a></p>`;
   const rows = Object.entries(g).map(([k, arr]) => ({ k, arr, last: arr[arr.length - 1], e: evalLab(arr[arr.length - 1]) }))
     .sort((a, b) => ORDER[a.e.st] - ORDER[b.e.st] || a.last.name.localeCompare(b.last.name));
   const cnt = st => rows.filter(r => r.e.st === st).length;
   const dates = [...new Set(db.labs.map(l => l.date))].sort();
   const usedSrc = [...new Set(TESTS.flatMap(t => t.src))];
-  return `${DISCLAIMER}
+  return `${back}${DISCLAIMER}
   ${rows.length ? `<div class="counts"><div class="good"><b>${cnt("good")}</b><span>Normal</span></div><div class="warn"><b>${cnt("warn")}</b><span>Borderline</span></div><div class="bad"><b>${cnt("bad")}</b><span>Attention</span></div></div>` : ""}
   <div class="card"><h2>Your results <small>${rows.length ? "tap for details" : ""}</small></h2>
     ${rows.length ? rows.map(r => {
@@ -2492,12 +2707,12 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = editing ? editSheet() : openGuide ? guideSheet(openGuide) : openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; editing = null; openGuide = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
   if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
-  if (editing || openGuide) { sh.scrollTop = 0; return; }
+  if (editing || openGuide || openScan) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -2519,7 +2734,7 @@ function viewSettings() {
   const nUpper = s.liftGoals.filter(g => g.area === "upper").length;
   const backupAge = backupAgeDays();
   return `
-  ${navigator.standalone ? `<div class="banner warn"><b>Heads up:</b> you opened the home-screen web-app version. iPhone keeps its data separate from Safari's, and the Apple Health Shortcut opens Safari. Use the Shortcut as your home-screen icon instead (see the setup guide).</div>` : ""}
+  ${isStandalone() ? `<div class="banner"><b>Tip:</b> links opened by the Apple Health Shortcut land in Safari, which keeps separate data from this home-screen app. Have the Shortcut copy the link instead, then tap <b>Sync from Health</b> on Home.</div>` : ""}
   <div class="banner"><b>Your entries save automatically.</b> Anything you log — weigh-ins, meals, fasts, workouts, labs — is stored on this device the moment you tap Save or Add. The only button you need on this page is <b>Save these settings</b> after changing the profile and goals below. Use <b>Back up all my data</b> to keep a copy off this device.</div>
   <div class="card"><h2>Apple Health sync</h2>
     <p class="muted" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
@@ -2547,6 +2762,7 @@ function viewSettings() {
       </div>
       <div class="row">
         <label>Fast goal (hours)<input type="number" name="fastTarget" min="8" max="72" value="${s.fastTarget}" inputmode="numeric"></label>
+        <label>Weigh-in day<select name="weighDay">${DAYS.map((d, i) => `<option value="${i}"${i === weighDay() ? " selected" : ""}>${d}</option>`).join("")}</select></label>
         <label>Protein goal (g / day)<input type="number" name="proteinTarget" min="10" value="${s.proteinTarget}" inputmode="numeric"></label>
       </div>
       <div class="row">
@@ -2581,6 +2797,8 @@ function viewSettings() {
   </div>
   <div class="card"><h2>Danger zone</h2>
     <button class="btn danger" data-act="wipe">Erase all data on this device</button></div>
+  <div class="card"><h2>More</h2><ul class="list">
+    <li><div class="grow"><b>Labs &amp; blood work</b><div class="faint">Your lab results, what they mean, and where the ranges come from</div></div><button class="btn secondary small" data-tab="labs">Open</button></li></ul></div>
   <p class="faint" style="text-align:center"><a href="#" data-tab="home">← Back to dashboard</a></p>`;
 }
 
@@ -2589,6 +2807,7 @@ function viewSettings() {
 // =====================================================================
 const forms = {
   ...coachForms,
+  ...scanForms,
   weight(f) {
     const w = num(f.get("w")); if (w == null) return;
     const e = { date: f.get("date"), type: f.get("type") || "wake", w, bf: num(f.get("bf")), muscle: num(f.get("muscle")), bmi: num(f.get("bmi")), note: f.get("note").trim(), src: "manual" };
@@ -2625,6 +2844,7 @@ const forms = {
     if (ft) s.heightIn = ft * 12 + (inch || 0);
     if (num(f.get("age"))) s.age = num(f.get("age"));
     s.sex = f.get("sex") === "female" ? "female" : "male";
+    s.weighDay = f.get("weighDay") != null ? +f.get("weighDay") : 5;
     s.goals = [...new Set(goals)].sort((a, b) => b - a);
     s.shouldersCleared = f.get("injury") !== "yes";
     if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: sw, type: "other", note: "Starting weight", src: "manual" });
@@ -2655,6 +2875,7 @@ const forms = {
     for (const k of ["cardioTarget", "strengthTarget", "fastTarget", "proteinTarget"]) { const v = num(f.get(k)); if (v) s[k] = v; }
     for (const k of ["age", "burnOverride"]) s[k] = num(f.get(k)) || null;
     s.sex = f.get("sex") === "female" ? "female" : "male";
+    if (f.get("weighDay") != null) s.weighDay = +f.get("weighDay");
     const cleared = !!f.get("shouldersCleared");
     if (cleared && !s.shouldersCleared) s.clearedDate = today();
     s.shouldersCleared = cleared;
@@ -2700,6 +2921,7 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("keydown", e => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".foldable > h2")) { e.preventDefault(); toggleCard(e.target); }
+  if (e.key === "Escape" && $("#scanner")) { stopScan(); return; }
   if (e.key === "Escape" && $("#recap")) { $("[data-act=closeRecap]").click(); return; }
   if (e.key === "Escape" && openGuide && !editing) { openGuide = null; renderSheet(); return; }
 });
@@ -2749,10 +2971,14 @@ document.addEventListener("click", e => {
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { if (editing) editing = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") { coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render(); window.scrollTo(0, 0); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
+  if (act === "scanStart") { startScan(); return; }
+  if (act === "scanClose") { stopScan(); return; }
+  if (act === "saveAnyway") { draft.force = true; const f = $("form[data-form=meal]"); if (f) f.requestSubmit(); return; }
+  if (act === "browserOk") { browserOk = true; try { localStorage.setItem(KEY + ".browserOk", "1"); } catch (err) {} render(); return; }
   if (act === "closeRecap") { const r = $("#recap"); if (r) { r.classList.remove("show"); setTimeout(() => r.remove(), 250); } return; }
   if (act === "recap") { showRecap(el.dataset.d); return; }
   if (act === "cardioPick") { lastAdd.cardioType = el.dataset.v; const sel = $("#cardioForm [name=type]"); if (sel) sel.value = el.dataset.v; syncCardioForm($("#cardioForm")); document.querySelectorAll("[data-act=cardioPick]").forEach(b => b.classList.toggle("on", b === el)); return; }
