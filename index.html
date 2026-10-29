@@ -274,6 +274,9 @@ nav.tabs button.on svg { color: var(--accent); }
 .frow.unmatched { box-shadow: inset 0 0 0 1.5px var(--warn); }
 .frow input, .frow select { background: var(--card); }
 .frow-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.frow.closed { padding-bottom: 6px; }
+.frow-sum b { display: block; font-size: 16px; }
+.chip small { font-weight: 500; color: var(--ink-3); margin-left: 4px; }
 .row.tight > label { flex: 1 1 80px; }
 .ftotal { background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 15px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
@@ -398,7 +401,7 @@ const DEFAULTS = {
   comp: [],    // body fat % / BMI entered by hand: {id, date, bf, bmi, note}
   body: [],    // scale-only measurements (e.g. Renpho): {id, date, muscle, skeletal, ffm, visceral, subq, water, protein, bone, metage}
   foods: [],   // food table: {id, name, serving, amt, unit, cal, protein, aliases, src}
-  presets: []  // My Foods: {id, name, items:[{foodId, name, servings, cal, protein}]}
+  presets: []  // Favorites: {id, name, items:[{foodId, name, servings, cal, protein}]}
 };
 // Built-in food table, copied into db.foods once so it can be edited.
 // [name, serving label, amount, unit, calories, protein g, synonyms]. Values are approximate (USDA-style averages).
@@ -1110,7 +1113,7 @@ const SPEC = {
       [F("cal", "Calories", "num", { req: 1, min: 0, step: "any" }), F("protein", "Protein g", "num", { req: 1, min: 0, step: "any" })],
       [F("aliases", "Synonyms (comma separated, optional)", "text", { ph: "e.g. pb, peanut butta" })]],
     check(e) { e.aliases = e.aliases.split(",").map(x => x.trim()).filter(Boolean); if (!(e.amt > 0)) e.amt = 1; e.protein = e.protein || 0; } },
-  presets: { title: "My Food", rows: [[F("name", "Name", "text", { req: 1 })]] },
+  presets: { title: "favorite", rows: [[F("name", "Name", "text", { req: 1 })]] },
   comp: { title: "body composition", added: "Saved",
     rows: [[D()], [F("bf", "Body fat (%)", "num", { step: "0.1", min: 2, max: 75 }), F("bmi", "BMI", "num", { step: "0.1", min: 10, max: 90 })], [F("note", "Note", "text", { ph: "optional" })]],
     check: e => { if (e.bf == null && e.bmi == null) return "Enter body fat %, BMI, or both."; } },
@@ -1446,7 +1449,7 @@ function compCard(bfE, mmE, leanE, bmi) {
       : `<button class="btn ghost small" style="margin-top:14px" data-act="compAdd">+ Add body fat % or BMI</button>`}
     ${rows.length ? `<details id="compAll" style="margin-top:14px"><summary>All readings (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
       <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns("comp", x.id)}</li>`)}
-      <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under the weight log's All readings.</p></details>` : ""}
+      <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under All weigh-ins.</p></details>` : ""}
   </div>`;
 }
 const backupAgeDays = () => db.settings.lastBackup ? Math.floor((Date.now() - new Date(db.settings.lastBackup)) / 864e5) : null;
@@ -1608,7 +1611,7 @@ function viewWeight() {
     </details>
   </div>
   <div class="card">
-    <h2>All readings</h2>
+    <h2>All weigh-ins</h2>
     ${all.length ? moreList([...all].reverse(), 30, w => `
       <li><div class="grow"><div><b>${fmtDay(w.date)}</b> <span class="tag ${w.type === "wake" ? "red" : ""}">${TYPES[w.type] || w.type}</span> ${w.src === "health" ? '<span class="tag">Health</span>' : ""}</div>
         <div class="faint">${[w.note ? esc(w.note) : "", w.bf != null ? r1(w.bf) + "% fat" : "", w.muscle != null ? r1(w.muscle) + " lb muscle" : "", w.lean != null ? r1(w.lean) + " lb lean" : "", w.bmi != null ? "BMI " + r1(w.bmi) : ""].filter(Boolean).join(" · ")}</div></div>
@@ -1752,30 +1755,86 @@ async function offSearch(q) {
 }
 // The meal being entered, kept outside the DOM so re-renders don't lose it
 const nowHM = () => { const n = new Date(); return `${pad(n.getHours())}:${pad(n.getMinutes())}`; };
-const newDraft = () => ({ date: today(), time: nowHM(), dateTouched: false, slot: null, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "", autoEst: false, nudge: false, force: false });
+const newDraft = () => ({ date: today(), time: nowHM(), dateTouched: false, slot: null, text: "", cheat: false, rows: [], q: "", results: null, searching: false, presetName: "", nudge: false, force: false });
 let draft = newDraft();
-let mealFormOpen = null; // remembers whether you left "Log a meal" open
+let mealFormOpen = null; // remembers whether you left "Build a meal" open
 const draftTotals = () => ({ cal: draft.rows.reduce((a, r) => a + (r.cal || 0), 0), protein: r1n(draft.rows.reduce((a, r) => a + (r.protein || 0), 0)) });
-const foodOptions = sel => [...db.foods].sort((a, b) => a.name.localeCompare(b.name)).map(f => `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc(f.name)} — ${esc(f.serving)}</option>`).join("");
+const rowName = r => { const f = foodById(r.foodId); return (r.name || (f && f.name) || r.text || "").trim(); };
+const rowAmount = r => { const f = foodById(r.foodId); return r.amount ? r.amount : f ? `${r1n(r.servings || 0)} × ${f.serving}` : r.servings && r.servings !== 1 ? `${r1n(r.servings)} servings` : ""; };
+const rowSum = r => `<b>${esc(rowName(r) || "New item")}</b><span class="faint">${[rowAmount(r), r.cal != null ? r.cal + " cal" : "no calories yet", r.protein != null ? r.protein + " g protein" : ""].filter(Boolean).map(esc).join(" · ")}</span>`;
+// Foods you've logged before: the most recent amount, calories and protein for each name
+function foodMemory() {
+  const mem = new Map();
+  [...db.meals].sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))).forEach(m => {
+    if (m.cal == null) return;
+    const items = m.items && m.items.length ? m.items : [{ name: m.text, servings: 1, cal: m.cal, protein: m.protein || 0 }];
+    items.forEach(i => { const name = String(i.name || "").trim(); if (!name || i.cal == null) return;
+      mem.set(exKey(name), { name, foodId: i.foodId || null, servings: i.servings || 1, amount: i.amount || "", cal: Math.round(i.cal), protein: r1n(i.protein || 0), date: m.date }); });
+  });
+  return mem;
+}
+// every typed word starts a word of the name ("almond" → almond milk)
+const nameHit = (t, name) => { const k = foodTokens(name); return t.length && t.every(w => k.some(x => x.startsWith(w))) ? (k.length === t.length ? 2 : 1) : 0; };
+function mealSuggest(q) {
+  const t = foodTokens(q); if (!t.length) return [];
+  const out = [], seen = new Set();
+  const mem = [...foodMemory().values()].sort((a, b) => b.date.localeCompare(a.date));
+  for (const m of mem) if (nameHit(t, m.name)) { out.push({ kind: "recent", ...m }); seen.add(exKey(m.name)); }
+  for (const p of db.presets) if (nameHit(t, p.name)) out.push({ kind: "fav", id: p.id, name: p.name, cal: Math.round(p.items.reduce((a, i) => a + (i.cal || 0), 0)), protein: r1n(p.items.reduce((a, i) => a + (i.protein || 0), 0)) });
+  const foods = db.foods.map(f => ({ f, sc: Math.max(...[f.name, ...(f.aliases || [])].map(n => nameHit(t, n))) })).filter(x => x.sc && !seen.has(exKey(x.f.name))).sort((a, b) => b.sc - a.sc);
+  for (const { f } of foods) out.push({ kind: "food", id: f.id, name: f.name, serving: f.serving, cal: f.cal, protein: f.protein });
+  return out.slice(0, 6);
+}
+function sugHtml() {
+  const list = draft.q.trim() ? mealSuggest(draft.q) : [];
+  if (!list.length) return "";
+  return `<div class="pick-list" style="margin-top:8px">${list.map((x, i) => `<button type="button" class="pick" data-act="mbPick" data-i="${i}">${x.kind === "fav" ? "★ " : ""}${esc(x.name)}<small>${
+    x.kind === "recent" ? `Last time${x.amount ? " (" + esc(x.amount) + ")" : ""}: ${x.cal} cal · ${x.protein} g protein`
+    : x.kind === "fav" ? `Favorite: ${x.cal} cal · ${x.protein} g protein` : `per ${esc(x.serving)}: ${x.cal} cal · ${x.protein} g protein`}</small><span>+</span></button>`).join("")}</div>`;
+}
 function draftHtml() {
-  const tot = draftTotals(), bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
+  const tot = draftTotals(), bad = draft.rows.filter(r => r.cal == null).length;
+  if (!draft.rows.length) return `<p class="faint" style="margin:12px 0 0">No items yet — add them one at a time above.</p>`;
   return draft.rows.map((r, i) => {
-    const f = foodById(r.foodId), ok = f || r.custom;
-    return `<div class="frow ${ok ? "" : "unmatched"}">
-      <div class="frow-top">${ok ? '<span class="tag">Estimated</span>' : '<span class="st warn"><i>!</i>No match — pick a food or type calories</span>'}
-        <span class="faint grow" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">“${esc(r.text)}”</span>
+    const f = foodById(r.foodId);
+    return `<div class="frow ${r.cal == null ? "unmatched" : ""} ${r.edit ? "" : "closed"}" data-ri="${i}">
+      <div class="frow-top"><div class="frow-sum grow" style="flex:1;min-width:0">${rowSum(r)}</div>
+        <button type="button" class="x" data-act="rowEdit" data-i="${i}" aria-label="${r.edit ? "Done editing" : "Edit"}">${r.edit ? "✓" : "✎"}</button>
         <button type="button" class="x" data-act="rmRow" data-i="${i}" aria-label="Remove">×</button></div>
-      <label>Food<select data-row="${i}" data-f="foodId">${r.custom ? `<option value="" selected>${esc(r.name)} (saved values)</option>` : '<option value="">— pick a food —</option>'}${foodOptions(r.foodId)}</select></label>
+      ${r.edit ? `<label>Item<input data-row="${i}" data-f="name" value="${esc(rowName(r))}" placeholder="e.g. almond milk"></label>
       <div class="row tight">
-        <label>Servings${f ? ` <span class="faint">× ${esc(f.serving)}</span>` : ""}<input type="number" step="any" min="0" inputmode="decimal" data-row="${i}" data-f="servings" value="${r.servings ?? ""}"></label>
+        ${f ? `<label>Servings <span class="faint">× ${esc(f.serving)}</span><input type="number" step="any" min="0" inputmode="decimal" data-row="${i}" data-f="servings" value="${r.servings ?? ""}"></label>`
+          : `<label>Amount<input data-row="${i}" data-f="amount" value="${esc(r.amount || "")}" placeholder="e.g. 1 cup"></label>`}
         <label>Calories<input type="number" step="any" min="0" inputmode="numeric" data-row="${i}" data-f="cal" value="${r.cal ?? ""}"></label>
         <label>Protein g<input type="number" step="any" min="0" inputmode="decimal" data-row="${i}" data-f="protein" value="${r.protein ?? ""}"></label>
-      </div></div>`; }).join("")
-    + (draft.rows.length ? `<div class="ftotal" id="draftTotal">Estimated total: <b class="n" style="font-size:20px">${tot.cal} cal</b> · <b class="n" style="font-size:20px">${tot.protein} g protein</b>
-        ${bad ? `<div style="color:var(--warn);margin-top:4px">${bad} item${bad === 1 ? "" : "s"} not matched yet.</div>` : ""}</div>
-      <label>Save as one of My Foods (optional)<input data-draft="presetName" value="${esc(draft.presetName)}" placeholder="e.g. Usual breakfast"></label>` : "")
-    + (draft.nudge ? `<div class="banner warn" id="mealNudge" style="margin-top:12px"><b>${draftTotals().cal || draft.rows.some(r => r.cal != null) ? "Some items have no calories yet." : "No calories or protein yet."}</b> Pick a food from the list, type the numbers in, or scan the package barcode — or save it as is.
+      </div>` : ""}</div>`; }).join("")
+    + `<div class="ftotal" id="draftTotal">Meal total: <b class="n" style="font-size:20px">${tot.cal} cal</b> · <b class="n" style="font-size:20px">${tot.protein} g protein</b>
+        <div class="faint">${draft.rows.length} item${draft.rows.length === 1 ? "" : "s"}</div>
+        ${bad ? `<div style="color:var(--warn);margin-top:4px">${bad} item${bad === 1 ? " has" : "s have"} no calories yet — tap ✎ to add them.</div>` : ""}</div>
+      <label>☆ Save as a favorite (optional)<input data-draft="presetName" value="${esc(draft.presetName)}" placeholder="Name it, e.g. Coffee with almond milk"></label>`
+    + (draft.nudge ? `<div class="banner warn" id="mealNudge" style="margin-top:12px"><b>${bad === draft.rows.length ? "No calories yet." : "Some items have no calories yet."}</b> Tap ✎ on an item to type them in, or scan the package barcode — or save it as is.
       <div class="btn-row" style="margin-top:10px"><button type="button" class="btn secondary small" data-act="scanStart">📷 Scan barcode</button><button type="button" class="btn ghost small" data-act="saveAnyway">Save without them</button></div></div>` : "");
+}
+// Turn what's typed in the add box into items: remembered foods first, then favorites and the food list
+function typedRows(q) {
+  const mem = foodMemory(), rows = [];
+  for (const chunk of String(q).split(/\s*(?:,|;|\n|\+|&|\band\b)\s*/i).filter(c => c.trim())) {
+    const fav = db.presets.find(x => exKey(x.name) === exKey(chunk));
+    if (fav) { rows.push(...presetRows(fav)); continue; }
+    const pc = parseChunk(chunk), m = mem.get(exKey(pc.name)) || mem.get(exKey(chunk));
+    if (m && !foodById(m.foodId)) { const k = mem.get(exKey(chunk)) ? 1 : pc.qty;
+      rows.push({ text: chunk.trim(), src: "memory", foodId: null, name: m.name, amount: k === 1 ? m.amount : "", servings: r1n(m.servings * k), cal: Math.round(m.cal * k), protein: r1n(m.protein * k) }); continue; }
+    const c = chunk.trim(), amt = pc.name && c.toLowerCase().endsWith(pc.name.toLowerCase()) ? c.slice(0, c.length - pc.name.length).replace(/\bof\s*$/i, "").trim() : "";
+    for (const r of parseMeal(chunk)) { if (r.cal == null) { r.name = pc.name || c; r.amount = amt; r.custom = true; r.edit = true; } rows.push(r); }
+  }
+  return rows;
+}
+function mbAdd() {
+  const q = draft.q.trim();
+  const rows = q ? typedRows(q) : [{ text: "", src: "hand", foodId: null, name: "", amount: "", servings: 1, cal: null, protein: null, custom: true, edit: true }];
+  draft.rows.push(...rows); draft.q = ""; draft.results = null; draft.nudge = false;
+  const inp = $("[data-draft=q]"); if (inp) inp.value = "";
+  refreshDraft(); return rows;
 }
 function offHtml() {
   if (draft.searching) return `<p class="faint">Searching Open Food Facts…</p>`;
@@ -1786,7 +1845,7 @@ function offHtml() {
     <button type="button" class="btn secondary small" data-act="offPick" data-i="${i}">Add</button></li>`).join("")}</ul>
     <p class="faint">Label values from Open Food Facts (community data) — check them against your package.</p>`;
 }
-const refreshDraft = () => { const d = $("#draft"); if (d) d.innerHTML = draftHtml(); const o = $("#offResults"); if (o) o.innerHTML = offHtml(); };
+const refreshDraft = () => { const d = $("#draft"); if (d) d.innerHTML = draftHtml(); const o = $("#offResults"); if (o) o.innerHTML = offHtml(); const g = $("#mbSug"); if (g) g.innerHTML = sugHtml(); };
 function updateDraftTotal() {
   const el = $("#draftTotal"); if (!el) return;
   const tot = draftTotals(); el.querySelectorAll("b")[0].textContent = tot.cal + " cal"; el.querySelectorAll("b")[1].textContent = tot.protein + " g protein";
@@ -1795,51 +1854,52 @@ function draftInput(el) {
   if (el.dataset.draft) {
     const k = el.dataset.draft; draft[k] = el.type === "checkbox" ? el.checked : el.value;
     if (k === "date" || k === "time") draft.dateTouched = true;
-    if (k === "text") { draft.autoEst = false; draft.nudge = false; }
+    if (k === "q") { draft.results = null; const g = $("#mbSug"); if (g) g.innerHTML = sugHtml(); const o = $("#offResults"); if (o) o.innerHTML = ""; }
     return true;
   }
   if (el.dataset.row == null) return false;
   const r = draft.rows[+el.dataset.row], f = el.dataset.f; if (!r) return true;
-  if (f === "foodId") {
-    if (!el.value) return true;
-    r.foodId = el.value; r.custom = false; if (!(r.servings > 0)) r.servings = 1; calcRow(r); refreshDraft(); return true;
-  }
-  r[f] = num(el.value);
+  const box = el.closest(".frow");
+  r[f] = f === "name" || f === "amount" ? el.value : num(el.value);
   if (f === "servings" && r.foodId) {
     calcRow(r);
-    const box = el.closest(".frow"); box.querySelector("[data-f=cal]").value = r.cal; box.querySelector("[data-f=protein]").value = r.protein;
+    box.querySelector("[data-f=cal]").value = r.cal; box.querySelector("[data-f=protein]").value = r.protein;
   }
+  box.querySelector(".frow-sum").innerHTML = rowSum(r);
+  box.classList.toggle("unmatched", r.cal == null);
   updateDraftTotal(); return true;
 }
 function saveMeal() {
-  if (!draft.rows.length && !draft.text.trim()) { alert("Describe what you ate, or add some foods."); return false; }
-  // a description with no rows yet: estimate it first so the meal gets calories
-  if (!draft.rows.length && !draft.autoEst) {
-    draft.autoEst = true;
-    const rows = parseMeal(draft.text);
-    if (rows.length) {
-      draft.rows = rows; draft.nudge = rows.some(r => r.cal == null); refreshDraft();
-      toast(draft.nudge ? "Some items need calories — see below" : "Estimated from your description — check it, then tap Save meal"); return false;
-    }
-  }
+  if (draft.q.trim()) { const rows = mbAdd(); toast(`Added ${rows.map(rowName).join(", ")} — check it, then tap Save meal`); return false; }
+  if (!draft.rows.length) { alert("Add at least one item first."); return false; }
   const known = draft.rows.filter(r => r.cal != null);
-  if ((!known.length || known.length < draft.rows.length) && !draft.force) {
+  if (known.length < draft.rows.length && !draft.force) {
     draft.nudge = true; refreshDraft();
     const n = $("#mealNudge"); if (n) n.scrollIntoView({ block: "center", behavior: "smooth" });
     return false;
   }
-  const items = draft.rows.map(r => { const f = foodById(r.foodId);
-    return { foodId: r.foodId, name: f ? f.name : r.name || r.text, servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }; });
+  const items = draft.rows.map(r => ({ foodId: foodById(r.foodId) ? r.foodId : null, name: rowName(r) || "Item", amount: rowAmount(r), servings: r.servings || 0, cal: r.cal || 0, protein: r.protein || 0 }));
   const tot = draftTotals(), date = draft.dateTouched ? draft.date || today() : today(), time = draft.dateTouched ? draft.time || nowHM() : nowHM();
   db.meals.push({ id: uid(), date, time, slot: draft.slot || slotByTime(time), text: draft.text.trim() || items.map(i => i.name).join(", "), cheat: !!draft.cheat,
     items, cal: known.length ? tot.cal : null, protein: known.length ? tot.protein : null, est: true });
   const pn = draft.presetName.trim();
-  if (pn && items.length) {
+  if (pn) {
     const ex = db.presets.find(x => exKey(x.name) === exKey(pn));
     if (ex) ex.items = items; else db.presets.push({ id: uid(), name: pn, items });
   }
-  save(); draft = newDraft();
-  toast(pn && items.length ? `Meal saved · “${pn}” added to My Foods` : known.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved without calories — you can add them later with ✎");
+  save(); draft = newDraft(); mealFormOpen = false;
+  toast(pn ? `Meal saved · “${pn}” added to Favorites` : known.length ? `Meal saved · ${tot.cal} cal, ${tot.protein} g protein` : "Meal saved without calories — you can add them later with ✎");
+  render(); const d = $("#mealForm"); if (d) d.open = false;
+  return false;
+}
+// One tap: log a favorite now
+function logFavorite(p) {
+  const time = nowHM(), cal = Math.round(p.items.reduce((a, i) => a + (i.cal || 0), 0)), protein = r1n(p.items.reduce((a, i) => a + (i.protein || 0), 0));
+  const m = { id: uid(), date: today(), time, slot: qa.slotTouched ? qa.slot : slotByTime(time), text: p.name, cheat: false,
+    items: p.items.map(i => ({ ...i })), cal, protein, est: true, src: "fav" };
+  db.meals.push(m); save();
+  qaSaved = { id: m.id, name: p.name, slot: m.slot, cal, protein, custom: false, undo: true };
+  toast(`Logged ${p.name}`);
 }
 // Calories out: resting burn (Mifflin-St Jeor × 1.2, or your own number) + logged exercise
 const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWeight; };
@@ -1905,7 +1965,7 @@ function dayEnergy(date) {
 }
 
 // =====================================================================
-// Quick Add: type anything; pick a match (Food List, My Foods, Open Food Facts),
+// Quick Add: type anything; pick a match (foods you've logged, Favorites, Food List, Open Food Facts),
 // or enter calories and protein yourself — by hand or from an AI app's reply
 // =====================================================================
 const SLOTS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
@@ -1915,7 +1975,7 @@ const newQa = slot => ({ desc: "", cal: "", protein: "", servings: 1, food: null
   date: today(), time: nowHM(), dateTouched: false, local: [], results: null, msg: null, paste: false, nudged: false });
 let qa = newQa(), qaSaved = null, qaTimer = null;
 const qaCache = {};
-// Food List and My Foods entries whose names match the description (exact match = all words the same)
+// Remembered foods, Favorites and Food List entries whose names match the description (exact match = all words the same)
 function qaLocal(desc) {
   const t = foodTokens(desc), out = [];
   if (!t.length) return out;
@@ -1923,13 +1983,16 @@ function qaLocal(desc) {
     let best = 0;
     for (const key of keys) {
       const k = foodTokens(key); if (!k.length) continue;
-      const sc = k.length === t.length && k.every(w => t.includes(w)) ? 100 : k.every(w => t.includes(w)) ? 10 * k.length : t.every(w => k.includes(w)) ? 5 * t.length : 0;
+      const sc = k.length === t.length && k.every(w => t.includes(w)) ? 100 : k.every(w => t.includes(w)) ? 10 * k.length : t.every(w => k.includes(w)) ? 5 * t.length : t.every(w => k.some(x => x.startsWith(w))) ? 3 * t.length : 0;
       best = Math.max(best, sc);
     }
     if (best) out.push({ kind, id, name, serving, cal, protein, exact: best === 100, sc: best });
   };
+  const recent = new Set();
+  for (const m of foodMemory().values()) { const before = out.length; consider("recent", null, m.name, [m.name], m.amount || "", m.cal, m.protein);
+    if (out.length > before) { Object.assign(out[out.length - 1], { foodId: m.foodId, sc: out[out.length - 1].sc + 50 }); recent.add(exKey(m.name)); } }
   for (const p of db.presets) consider("preset", p.id, p.name, [p.name], "1 serving", Math.round(p.items.reduce((a, i) => a + (i.cal || 0), 0)), r1n(p.items.reduce((a, i) => a + (i.protein || 0), 0)));
-  for (const f of db.foods) consider("food", f.id, f.name, [f.name, ...(f.aliases || [])], f.serving, f.cal, f.protein);
+  for (const f of db.foods) if (!recent.has(exKey(f.name))) consider("food", f.id, f.name, [f.name, ...(f.aliases || [])], f.serving, f.cal, f.protein);
   return out.sort((a, b) => b.sc - a.sc).slice(0, 4);
 }
 function qaSearch() {
@@ -1944,7 +2007,7 @@ function qaSearch() {
 const qaLabel = t => `<p class="faint" style="margin:12px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${t}</p>`;
 function qaResultsHtml() {
   if (qa.food || !qa.desc.trim()) return "";
-  const pick = (src, x, i) => `<button type="button" class="pick" data-act="qaPick" data-src="${src}" data-i="${i}">${esc(x.name)}<small>${x.kind === "preset" ? "My Foods · " : ""}per ${esc(x.serving)}: ${x.cal} cal · ${x.protein} g protein</small><span>+</span></button>`;
+  const pick = (src, x, i) => `<button type="button" class="pick" data-act="qaPick" data-src="${src}" data-i="${i}">${x.kind === "preset" ? "★ " : ""}${esc(x.name)}<small>${x.kind === "recent" ? `Last time${x.serving ? " (" + esc(x.serving) + ")" : ""}` : `${x.kind === "preset" ? "Favorite · " : ""}per ${esc(x.serving)}`}: ${x.cal} cal · ${x.protein} g protein</small><span>+</span></button>`;
   let h = qa.local.length ? qaLabel("From your foods") + `<div class="pick-list">${qa.local.map((x, i) => pick("local", x, i)).join("")}</div>` : "";
   if (qa.results === "loading") h += `<p class="faint" style="margin:10px 0 0">Searching Open Food Facts…</p>`;
   else if (qa.results === "error") h += `<p class="faint" style="margin:10px 0 0">Couldn't reach Open Food Facts. Enter calories and protein below, or tap Ask AI.</p>`;
@@ -1956,7 +2019,7 @@ function qaResultsHtml() {
 }
 function qaSelHtml() {
   const f = qa.food; if (!f) return "";
-  return `<div class="qa-sel"><div class="grow"><b>${esc(f.name)}</b><div class="faint">per ${esc(f.serving)}: ${f.cal} cal · ${f.protein} g protein</div></div>
+  return `<div class="qa-sel"><div class="grow"><b>${esc(f.name)}</b><div class="faint">${f.kind === "recent" ? `last time${f.serving ? " (" + esc(f.serving) + ")" : ""}` : "per " + esc(f.serving)}: ${f.cal} cal · ${f.protein} g protein</div></div>
     <button type="button" class="x" data-act="qaClear" aria-label="Clear selection">×</button></div>
     <label>Servings<input data-qa="servings" type="number" step="0.25" min="0" inputmode="decimal" value="${esc(qa.servings)}"></label>`;
 }
@@ -1975,7 +2038,7 @@ function qaSavedHtml() {
   const mine = db.presets.some(p => exKey(p.name) === exKey(s.name));
   return `<div class="banner" style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <div class="grow" style="flex:1;min-width:150px">Logged <b>${esc(s.name)}</b> to ${SLOTS[s.slot].toLowerCase()}${s.cal != null ? ` — ${s.cal} cal · ${s.protein || 0} g protein` : ""}.</div>
-    ${s.custom ? mine ? `<span class="tag good">✓ In My Foods</span>` : `<button type="button" class="btn secondary small" data-act="qaSaveMine">Save to My Foods</button>` : ""}
+    ${s.undo ? `<button type="button" class="btn ghost small" data-act="qaUndo">Undo</button>` : s.custom ? mine ? `<span class="tag good">★ Favorite</span>` : `<button type="button" class="btn secondary small" data-act="qaSaveMine">☆ Save as favorite</button>` : ""}
     <button type="button" class="x" data-act="qaDismiss" aria-label="Dismiss">×</button></div>`;
 }
 function qaRefresh() {
@@ -2041,6 +2104,7 @@ function qaSave() {
   }
   let foodId = null;
   if (qa.food && qa.food.kind === "food") foodId = qa.food.id;
+  if (qa.food && qa.food.kind === "recent" && foodById(qa.food.foodId)) foodId = qa.food.foodId;
   if (qa.food && qa.food.off) {
     let f = qa.food.off.code && db.foods.find(x => x.src === "off" && x.code === qa.food.off.code);
     if (!f) { f = { id: uid(), ...qa.food.off }; db.foods.push(f); }
@@ -2112,7 +2176,7 @@ function viewFood() {
     return `<li><div class="grow"><div>${fmtDT(f.start)}</div><div class="faint">to ${fmtDT(f.end)}</div></div>
       <span class="num">${fmtDur(dur)}</span>${hit ? '<span class="tag good">✓</span>' : ""}${rowBtns("fasts", f.id)}</li>`; };
   const mealRow = (m, withDate) => `<li><span class="faint" style="width:${withDate === true ? 92 : 66}px;flex:none">${withDate === true ? fmtD(m.date) + "<br>" : ""}${esc(fmtTime(m.date + "T" + m.time))}${withDate !== "today" ? `<br><span style="font-size:12px">${SLOTS[slotOf(m)]}</span>` : ""}</span><div class="grow">${esc(m.text)} ${m.cheat ? '<span class="tag red">cheat</span>' : ""}
-    ${m.cal != null ? `<div class="faint">${m.cal} cal · ${m.protein || 0} g protein${m.est ? " · estimated" : ""}</div>` : ""}</div>${rowBtns("meals", m.id)}</li>`;
+    ${m.cal != null ? `<div class="faint">${m.cal} cal · ${m.protein || 0} g protein${m.est ? " · estimated" : ""}</div>` : ""}</div>${db.presets.some(p => exKey(p.name) === exKey(m.text)) ? `<span class="x" aria-label="Favorite" style="color:var(--accent-text)">★</span>` : `<button class="x" data-act="favMeal" data-id="${esc(m.id)}" aria-label="Save as favorite">☆</button>`}${rowBtns("meals", m.id)}</li>`;
   const avgFast = recentFasts.length ? recentFasts.reduce((a, f) => a + (new Date(f.end) - new Date(f.start)), 0) / recentFasts.length : null;
   const meals = [...db.meals].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const recentMeals = meals.filter(m => m.date >= addDays(t, -6) && m.date !== t), olderMeals = meals.filter(m => m.date < addDays(t, -6));
@@ -2124,6 +2188,7 @@ function viewFood() {
   recentMeals.forEach(m => (byDay[m.date] = byDay[m.date] || []).push(m));
   return `${fastCard}
   <div class="card"><h2>Meals <small>today: ${dayTot.cal} cal · ${dayTot.p} g</small></h2>
+    ${db.presets.length ? qaLabel("Favorites — tap to log") + `<div class="chips">${db.presets.map(p => `<button type="button" class="chip" data-act="logFav" data-id="${esc(p.id)}">★ ${esc(p.name)}<small>${Math.round(p.items.reduce((a, i) => a + (i.cal || 0), 0))} cal</small></button>`).join("")}</div>` : ""}
     <form data-form="quickAdd" id="quickAdd">
       <div class="seg" role="group" aria-label="Which meal">${Object.entries(SLOTS).map(([k, l]) => `<button type="button" class="${qa.slot === k ? "on" : ""}" data-act="qaSlot" data-v="${k}">${l}</button>`).join("")}</div>
       <label>What did you eat?<input data-qa="desc" value="${esc(qa.desc)}" placeholder="e.g. chicken burrito bowl, mom's arroz con pollo" autocomplete="off" enterkeyhint="done"></label>
@@ -2137,26 +2202,25 @@ function viewFood() {
       <details id="qaWhen" style="margin-top:12px"><summary>Different day or time?</summary>
         <div class="row"><label>Date<input type="date" data-qa="date" value="${esc(qa.date)}" max="${t}"></label><label>Time<input type="time" data-qa="time" value="${esc(qa.time)}"></label></div></details>
       <button class="btn block" style="margin-top:12px">Save to today's log</button>
+      <button type="button" class="btn ghost block small" style="margin-top:8px" data-act="qaToMeal">+ Add another item to this meal</button>
     </form>
     <div id="qaSavedBox">${qaSavedHtml()}</div>
     ${qaLabel("Today's log")}
     ${todays.length ? Object.keys(SLOTS).filter(k => todays.some(m => slotOf(m) === k)).map(k => { const ms = todays.filter(m => slotOf(m) === k), st = sumOf(ms);
       return `<div class="slot-head"><b>${SLOTS[k]}</b><span class="faint">${st.cal} cal · ${st.p} g</span></div><ul class="list">${ms.map(m => mealRow(m, "today")).join("")}</ul>`; }).join("")
       : `<p class="faint" style="margin:0">Nothing logged yet today.</p>`}
-    <details id="mealForm" style="margin-top:16px" ${mealFormOpen ? "open" : ""}><summary>Build a meal from several foods</summary>
-      <p class="faint" style="margin-top:0">For meals with several parts — type them all, scan barcodes, or use My Foods.</p>
+    <details id="mealForm" style="margin-top:16px" ${mealFormOpen ? "open" : ""}><summary>Build a meal from several items</summary>
       <form data-form="meal">
         <div class="seg" role="group" aria-label="Which meal">${Object.entries(SLOTS).map(([k, l]) => `<button type="button" class="${(draft.slot || slotByTime(draft.time)) === k ? "on" : ""}" data-act="draftSlot" data-v="${k}">${l}</button>`).join("")}</div>
-        <div class="row"><label>Date<input type="date" data-draft="date" value="${esc(draft.date)}" required></label><label>Time<input type="time" data-draft="time" value="${esc(draft.time)}" required></label></div>
-        <label>What did you eat?<textarea data-draft="text" rows="2" placeholder="e.g. 2 sweet potatoes, 7 meatballs, 1 tbsp peanut butter">${esc(draft.text)}</textarea></label>
-        <div class="btn-row"><button type="button" class="btn secondary" data-act="estimate" style="flex:2">Estimate</button><button type="button" class="btn secondary" data-act="scanStart" style="flex:1">📷 Scan</button></div>
-        ${db.presets.length ? `<p class="faint" style="margin:14px 0 6px">My Foods — tap to add</p><div class="chips">${db.presets.map(p => `<button type="button" class="chip" data-act="addPreset" data-id="${esc(p.id)}">${esc(p.name)}</button>`).join("")}</div>` : ""}
-        <details id="offBox" style="margin-top:12px" ${draft.q || draft.results ? "open" : ""}><summary>Branded product (Open Food Facts)</summary>
-          <div class="row"><label style="flex:3 1 160px">Product name or barcode<input data-draft="q" value="${esc(draft.q)}" placeholder="e.g. fairlife core power" enterkeyhint="search"></label>
-            <button type="button" class="btn secondary small" data-act="offSearch" style="align-self:center;margin-top:8px">Search</button></div>
-          <div id="offResults">${offHtml()}</div>
-          <p class="faint" style="margin-top:8px">Product data from <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (Open Database License).</p></details>
+        ${db.presets.length ? `<p class="faint" style="margin:14px 0 6px">Favorites — tap to add to this meal</p><div class="chips">${db.presets.map(p => `<button type="button" class="chip" data-act="addPreset" data-id="${esc(p.id)}">★ ${esc(p.name)}</button>`).join("")}</div>` : ""}
+        <label>Add an item<input data-draft="q" value="${esc(draft.q)}" placeholder="Search or type, e.g. almond milk, 2 eggs" autocomplete="off" enterkeyhint="done"></label>
+        <div id="mbSug">${sugHtml()}</div>
+        <div class="btn-row" style="margin-top:10px"><button type="button" class="btn secondary small" data-act="mbAdd" style="flex:1">+ Add</button><button type="button" class="btn secondary small" data-act="offSearch" style="flex:1" aria-label="Search online">🔍 Online</button><button type="button" class="btn secondary small" data-act="scanStart" style="flex:1">📷 Scan</button></div>
+        <p class="faint" style="margin:6px 0 0">Pick a suggestion, or type the item and tap Add — you can fix the amount, calories and protein after.</p>
+        <div id="offResults">${offHtml()}</div>
         <div id="draft">${draftHtml()}</div>
+        <details id="mbWhen" style="margin-top:12px"><summary>Different day or time?</summary>
+          <div class="row"><label>Date<input type="date" data-draft="date" value="${esc(draft.date)}" max="${t}" required></label><label>Time<input type="time" data-draft="time" value="${esc(draft.time)}" required></label></div></details>
         <label class="check" style="margin-top:12px"><input type="checkbox" data-draft="cheat"${draft.cheat ? " checked" : ""}>This was a cheat meal</label>
         <button class="btn block" style="margin-top:10px">Save meal</button>
         <button type="button" class="btn ghost block small" style="margin-top:8px" data-act="clearDraft">Clear</button>
@@ -2164,11 +2228,11 @@ function viewFood() {
     ${Object.keys(byDay).length ? Object.entries(byDay).map(([d, ms]) => { const st = sumOf(ms); return `<div class="slot-head" style="margin-top:16px"><b style="text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--ink-3)">${fmtDay(d)}</b><span class="faint">${st.cal} cal · ${st.p} g</span></div><ul class="list">${ms.map(m => mealRow(m)).join("")}</ul>`; }).join("") : ""}
     ${olderMeals.length ? `<details style="margin-top:12px"><summary>Earlier meals (${olderMeals.length})</summary><ul class="list">${olderMeals.map(m => mealRow(m, true)).join("")}</ul></details>` : ""}
   </div>
-  <div class="card"><h2>My Foods <small>saved meals &amp; combos</small></h2>
+  <div class="card"><h2>Favorites <small>saved meals &amp; combos</small></h2>
     ${db.presets.length ? `<ul class="list">${db.presets.map(p => { const c = p.items.reduce((a, i) => a + i.cal, 0), pr = r1n(p.items.reduce((a, i) => a + i.protein, 0));
       return `<li><div class="grow"><b>${esc(p.name)}</b><div class="faint">${esc(p.items.map(i => i.name).join(", "))}</div><div class="faint">${c} cal · ${pr} g protein</div></div>
-        <button class="btn secondary small" data-act="addPreset" data-id="${esc(p.id)}">Log</button>${rowBtns("presets", p.id)}</li>`; }).join("")}</ul>`
-      : `<p class="faint" style="margin:0">After logging something with Quick Add, tap <b>Save to My Foods</b> — or name a built meal before saving. Saved foods show up as you type next time.</p>`}
+        <button class="btn secondary small" data-act="logFav" data-id="${esc(p.id)}">Log</button>${rowBtns("presets", p.id)}</li>`; }).join("")}</ul>`
+      : `<p class="faint" style="margin:0">Tap ☆ on a logged meal, name a built meal before saving, or tap <b>Save as favorite</b> after a Quick Add. Favorites show at the top of Meals for one-tap logging.</p>`}
   </div>
   <div class="card"><h2>Food list <small>${db.foods.length} foods</small></h2><div>
     <p class="faint" style="margin-top:0">What the meal box matches against. Synonyms help it recognize other words for the same food; plurals work automatically.</p>
@@ -3303,7 +3367,7 @@ function confetti(opt = {}) {
 // =====================================================================
 // Collapsible cards: every card with a heading can fold; state is remembered per section
 // =====================================================================
-const COLLAPSED_BY_DEFAULT = new Set(["All readings", "Recent fasts", "Earlier sessions", "Earlier workouts", "Recent core work", "Food list", "My exercises", "Danger zone", "Exercise guide", "Where the levels come from", "Plan settings"]);
+const COLLAPSED_BY_DEFAULT = new Set(["All readings", "All weigh-ins", "Recent fasts", "Earlier sessions", "Earlier workouts", "Recent core work", "Food list", "My exercises", "Danger zone", "Exercise guide", "Where the levels come from", "Plan settings"]);
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem(KEY + ".collapsed")) || {}; } catch (e) {}
 function decorateCards(root) {
@@ -3793,7 +3857,7 @@ document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealF
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.matches && e.target.matches("[data-plan-note]")) { e.preventDefault(); const b = e.target.closest(".day-note").querySelector("[data-act=planMark]"); if (b) b.click(); return; }
   if (e.key === "Enter" && e.target.dataset && e.target.dataset.qa === "desc") { e.preventDefault(); e.target.blur(); return; }
-  if (e.key === "Enter" && e.target.dataset && e.target.dataset.draft === "q") { e.preventDefault(); $("[data-act=offSearch]").click(); }
+  if (e.key === "Enter" && e.target.dataset && e.target.dataset.draft === "q") { e.preventDefault(); $("[data-act=mbAdd]").click(); }
 });
 document.addEventListener("keydown", e => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".foldable > h2")) { e.preventDefault(); toggleCard(e.target); }
@@ -3812,27 +3876,48 @@ document.addEventListener("click", e => {
   if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; if (el.dataset.focus === "cardioForm") { go(el.dataset.go); logCardio = { step: "group" }; renderSheet(); return; } go(el.dataset.go, el.dataset.focus); return; }
   if (act === "wview") { wView = el.dataset.v; render(); return; }
   if (act === "fview") { fView = el.dataset.v; render(); return; }
-  if (act === "estimate") {
-    if (!draft.text.trim()) { toast("Type what you ate first"); return; }
-    // keep rows you already fixed up when their text hasn't changed
-    const prev = draft.rows.filter(r => r.src === "text");
-    draft.rows = draft.rows.filter(r => r.src !== "text").concat(parseMeal(draft.text).map(r => {
-      const i = prev.findIndex(p => p.text === r.text); return i >= 0 ? prev.splice(i, 1)[0] : r; }));
-    refreshDraft();
-    const bad = draft.rows.filter(r => !r.foodId && !r.custom).length;
-    if (bad) toast(`${bad} item${bad === 1 ? "" : "s"} need a food picked`);
+  if (act === "mbAdd") { const rows = mbAdd(); if (rows.some(r => r.cal == null)) toast("Type the calories for the new item"); const inp = rows.some(r => r.edit) ? $(`[data-ri="${draft.rows.length - 1}"] [data-f=${rows[rows.length - 1].name ? "cal" : "name"}]`) : $("[data-draft=q]"); if (inp) inp.focus(); return; }
+  if (act === "mbPick") {
+    const x = mealSuggest(draft.q)[+el.dataset.i]; if (!x) return;
+    if (x.kind === "fav") { const p = db.presets.find(y => y.id === x.id); if (p) draft.rows.push(...presetRows(p)); }
+    else if (x.kind === "food") draft.rows.push(calcRow({ text: x.name, src: "food", foodId: x.id, name: x.name, servings: 1 }));
+    else draft.rows.push({ text: x.name, src: "memory", foodId: foodById(x.foodId) ? x.foodId : null, name: x.name, amount: x.amount, servings: x.servings, cal: x.cal, protein: x.protein });
+    draft.q = ""; draft.results = null; draft.nudge = false; const inp = $("[data-draft=q]"); if (inp) inp.value = "";
+    refreshDraft(); toast(`Added ${x.name}`); return;
+  }
+  if (act === "rowEdit") { const r = draft.rows[+el.dataset.i]; if (r) { r.edit = !r.edit; refreshDraft(); } return; }
+  if (act === "logFav") { const p = db.presets.find(x => x.id === el.dataset.id); if (!p) return; logFavorite(p); if (current === "food") render(); else go("food"); return; }
+  if (act === "qaUndo") { const sv = qaSaved; if (!sv) return; db.meals = db.meals.filter(m => m.id !== sv.id); qaSaved = null; save(); render(); toast("Removed"); return; }
+  if (act === "favMeal") {
+    const m = db.meals.find(x => x.id === el.dataset.id); if (!m) return;
+    const name = (prompt("Name this favorite", m.text) || "").trim(); if (!name) return;
+    const sum = (m.items || []).reduce((a, i) => a + (i.cal || 0), 0);
+    const items = m.items && m.items.length && m.cal != null && Math.round(sum) === Math.round(m.cal) ? m.items.map(i => ({ ...i }))
+      : [{ foodId: null, name, servings: 1, cal: m.cal || 0, protein: m.protein || 0 }];
+    const ex = db.presets.find(x => exKey(x.name) === exKey(name));
+    if (ex) ex.items = items; else db.presets.push({ id: uid(), name, items });
+    save(); render(); toast(`“${name}” saved to Favorites`); return;
+  }
+  if (act === "qaToMeal") {
+    const desc = qa.desc.trim(), cal = num(qa.cal), protein = num(qa.protein);
+    if (desc) draft.rows.push({ text: desc, src: "quick", foodId: qa.food && qa.food.kind === "food" ? qa.food.id : null, name: qa.food ? qa.food.name : desc,
+      amount: "", servings: qa.food ? num(qa.servings) || 1 : 1, cal: cal == null ? null : Math.round(cal), protein: protein == null ? (cal == null ? null : 0) : r1n(protein), edit: cal == null });
+    if (!draft.slot) draft.slot = qa.slot;
+    qa = newQa(qa.slot); mealFormOpen = true; render();
+    const d = $("#mealForm"); if (d) { d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); }
+    const inp = $("[data-draft=q]"); if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 300);
     return;
   }
   if (act === "rmRow") { draft.rows.splice(+el.dataset.i, 1); refreshDraft(); return; }
   if (act === "clearDraft") { draft = newDraft(); render(); return; }
   if (act === "addPreset") {
     const p = db.presets.find(x => x.id === el.dataset.id); if (!p) return;
-    draft.rows.push(...presetRows(p)); if (!draft.text.trim()) draft.text = p.name; mealFormOpen = true;
+    draft.rows.push(...presetRows(p)); if (!draft.text.trim() && !draft.rows.some(r => r.src !== "preset")) draft.text = p.name; mealFormOpen = true;
     if (current === "food") { render(); $("#draft").scrollIntoView({ block: "center" }); } else go("food", "mealForm");
     toast(`Added ${p.name} — review and save`); return;
   }
   if (act === "offSearch") {
-    const q = draft.q.trim(); if (!q) { toast("Type a product name or barcode"); return; }
+    const q = draft.q.trim(); if (!q) { toast("Type a product name or barcode first"); return; }
     draft.searching = true; refreshDraft();
     offSearch(q).then(r => { draft.results = r; }, err => { draft.results = `Couldn't reach Open Food Facts (${err.message}). Check your connection and try again.`; })
       .finally(() => { draft.searching = false; refreshDraft(); });
@@ -3842,7 +3927,8 @@ document.addEventListener("click", e => {
     const f = draft.results && draft.results[+el.dataset.i]; if (!f) return;
     let food = db.foods.find(x => x.src === "off" && f.code && x.code === f.code);
     if (!food) { food = { id: uid(), ...f }; db.foods.push(food); save(); }
-    draft.rows.push(calcRow({ text: food.name, src: "off", foodId: food.id, servings: 1 }));
+    draft.rows.push(calcRow({ text: food.name, src: "off", foodId: food.id, name: food.name, servings: 1 }));
+    draft.q = ""; draft.results = null; const inp = $("[data-draft=q]"); if (inp) inp.value = "";
     refreshDraft(); toast("Added — adjust servings if needed"); return;
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
@@ -3883,7 +3969,7 @@ document.addEventListener("click", e => {
   if (act === "draftSlot") { draft.slot = el.dataset.v; el.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === el)); return; }
   if (act === "qaPick") {
     const x = el.dataset.src === "local" ? qa.local[+el.dataset.i] : Array.isArray(qa.results) && qa.results[+el.dataset.i]; if (!x) return;
-    qa.food = { kind: x.kind || "off", id: x.id, name: x.name, serving: x.serving, cal: x.cal, protein: x.protein, off: el.dataset.src === "off" ? x : null };
+    qa.food = { kind: x.kind || "off", id: x.id, foodId: x.foodId, name: x.name, serving: x.serving, cal: x.cal, protein: x.protein, off: el.dataset.src === "off" ? x : null };
     qa.desc = x.name; qa.servings = 1; qa.cal = String(x.cal); qa.protein = String(x.protein); qa.msg = null; qa.nudged = false;
     qaSetInput("desc", qa.desc); qaSetInput("cal", qa.cal); qaSetInput("protein", qa.protein); qaRefresh(); return;
   }
@@ -3908,7 +3994,7 @@ document.addEventListener("click", e => {
   if (act === "qaSaveMine") {
     const sv = qaSaved; if (!sv) return;
     if (!db.presets.some(p => exKey(p.name) === exKey(sv.name))) db.presets.push({ id: uid(), name: sv.name, items: [{ foodId: null, name: sv.name, servings: 1, cal: sv.cal || 0, protein: sv.protein || 0 }] });
-    save(); toast(`“${sv.name}” saved to My Foods`); render(); return;
+    save(); toast(`“${sv.name}” saved to Favorites`); render(); return;
   }
   if (act === "qaDismiss") { qaSaved = null; qaRefresh(); return; }
   if (act === "saveAnyway") { draft.force = true; const f = $("form[data-form=meal]"); if (f) f.requestSubmit(); return; }
