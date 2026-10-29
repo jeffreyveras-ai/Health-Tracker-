@@ -1543,6 +1543,7 @@ function viewWeight() {
   const comp = k => [...all].reverse().find(w => w[k] != null);
   const bfE = compLatest("bf"), mmE = comp("muscle"), leanE = comp("lean"), bmiE = compLatest("bmi");
   const bmi = bmiE ? bmiE.bmi : last ? bmiFor(last.w) : null;
+  const lw = tw[tw.length - 1]; // latest wake-up reading (any reading until you have a wake-up one)
   // weekly summary rows: newest first, only weeks that have readings
   const weeks = [];
   if (tw.length) for (let w = weekStart(t); w >= weekStart(tw[0].date) && weeks.length < 8; w = addDays(w, -7)) {
@@ -1556,7 +1557,7 @@ function viewWeight() {
   return `
   <div class="stats3">
     <div class="tile"><div class="label">Lost</div><div class="value n down">${lost != null ? r1(lost) : "—"}<small>lb</small></div><div class="sub">since ${fmtD(s.startDate)}</div></div>
-    <div class="tile"><div class="label">Week avg</div><div class="value n">${r1(thisW.avg)}</div><div class="sub">${thisW.n} weigh-in${thisW.n === 1 ? "" : "s"}</div></div>
+    <div class="tile"><div class="label">Latest</div><div class="value n">${lw ? r1(lw.w) + "<small>lb</small>" : "—"}</div><div class="sub">${lw ? (lw.date === t ? "today" : fmtD(lw.date)) + (lw.type !== "wake" ? " · " + TYPES[lw.type].toLowerCase() : "") : "no weigh-ins"}</div></div>
     <div class="tile"><div class="label">Change</div><div class="value n ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${signed(wd)}</div><div class="sub">vs last wk</div></div>
   </div>
   <div class="card">
