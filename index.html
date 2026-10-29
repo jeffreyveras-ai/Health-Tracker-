@@ -9,7 +9,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Momentum">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0F1114">
+<script>try { if (localStorage.getItem("healthTracker.v1.theme") === "navy") document.documentElement.dataset.theme = "navy"; } catch (e) {}</script>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
@@ -18,23 +19,58 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
+  /* Momentum "Dark" (default) */
   color-scheme: dark;
-  --bg: #000000;
-  --card: #151515;
-  --card-2: #1f1f1f;
-  --line: #2b2b2b;
-  --ink: #ffffff;
-  --ink-2: #b8b8b8;
-  --ink-3: #7c7c7c;
-  --accent: #e8202f;
-  --accent-press: #c41624;
-  --accent-soft: rgba(232, 32, 47, .16);
-  --good: #33d17a;
-  --warn: #ffc533;
-  --bad: #ff5a4a;
-  --none: #8a8a8a;
+  --bg: #0F1114;
+  --card: #2E3136;
+  --card-2: #1F2226;
+  --line: #4A4F57;
+  --ink: #F4F6F8;
+  --ink-2: #C4C9D0;
+  --ink-3: #ADB3BC;
+  --accent: #C5F36B;
+  --accent-rgb: 197, 243, 107;
+  --accent-text: #C5F36B;
+  --on-accent: #0F1114;
+  --accent-press: #B0DE52;
+  --accent-soft: rgba(var(--accent-rgb), .14);
+  --good: #4FD1C5;
+  --good-soft: rgba(79, 209, 197, .15);
+  --warn: #F2C14E;
+  --warn-soft: rgba(242, 193, 78, .15);
+  --bad: #FFA24C;
+  --bad-soft: rgba(255, 162, 76, .16);
+  --none: #8B929C;
+  --hero-top: #353B2E;
+  --hero-border: #4A5536;
+  --sheet: #1A1D21;
+  --header-bg: rgba(15, 17, 20, .9);
+  --bar-bg: rgba(20, 22, 26, .96);
+  --chart-grid: #3A3E45;
   --radius: 16px;
   --num: "Barlow Condensed", "SF Pro Display", system-ui, sans-serif;
+}
+html[data-theme="navy"] {
+  /* Momentum "Navy" */
+  --bg: #101B2D;
+  --card: #243651;
+  --card-2: #192A43;
+  --line: #3E5577;
+  --ink: #F5F8FC;
+  --ink-2: #C8D3E2;
+  --ink-3: #B3C1D4;
+  --accent: #55B8FF;
+  --accent-rgb: 85, 184, 255;
+  --accent-text: #9AD3FF;
+  --on-accent: #0B1626;
+  --accent-press: #3DA6F2;
+  --none: #8FA0B8;
+  --hero-top: #253F61;
+  --hero-border: #2F5682;
+  --sheet: #152338;
+  --header-bg: rgba(16, 27, 45, .9);
+  --bar-bg: rgba(18, 30, 50, .96);
+  --chart-grid: #34496B;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
@@ -53,13 +89,13 @@ body {
 }
 a { color: var(--ink); }
 header.top {
-  position: sticky; top: 0; z-index: 5; background: rgba(0,0,0,.88);
+  position: sticky; top: 0; z-index: 5; background: var(--header-bg);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 header.top .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-header.top .logo { width: 44px; height: 44px; flex: none; border-radius: 11px; box-shadow: 0 0 0 1px #2b2b2b; }
+header.top .logo { width: 44px; height: 44px; flex: none; border-radius: 11px; box-shadow: 0 0 0 1px var(--line); }
 header.top .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
 header.top h1 { font-family: var(--num); font-size: 32px; font-weight: 800; margin: 0; line-height: 1.05; letter-spacing: .01em; text-transform: uppercase; }
 .icon-btn {
@@ -76,7 +112,7 @@ main { max-width: 640px; margin: 0 auto; padding: 6px 16px 24px; }
 .muted { color: var(--ink-2); }
 .faint { color: var(--ink-3); font-size: 14px; }
 .n { font-family: var(--num); font-variant-numeric: tabular-nums; }
-.hero { background: linear-gradient(160deg, #2a0a0e 0%, #151515 55%); border: 1px solid #3a1418; }
+.hero { background: linear-gradient(160deg, var(--hero-top) 0%, var(--card) 60%); border: 1px solid var(--hero-border); }
 .hero .label { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
 .hero .big { font-family: var(--num); font-size: 64px; font-weight: 800; line-height: 1; margin: 6px 0 4px; }
 .hero .big small { font-size: 24px; font-weight: 600; color: var(--ink-2); margin-left: 4px; }
@@ -112,11 +148,11 @@ input[type="checkbox"] { width: 24px; height: 24px; min-height: 0; display: inli
 label.check { display: flex; align-items: center; color: var(--ink); font-size: 16px; font-weight: 500; }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--card-2); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; }
 .seg button { font: inherit; font-weight: 700; font-size: 14px; border: 0; border-radius: 9px; min-height: 40px; background: none; color: var(--ink-2); cursor: pointer; letter-spacing: .04em; text-transform: uppercase; }
-.seg button.on { background: var(--accent); color: #fff; }
+.seg button.on { background: var(--accent); color: var(--on-accent); }
 button.btn {
   font: inherit; font-weight: 700; font-size: 16px; letter-spacing: .04em; text-transform: uppercase;
   border: 0; border-radius: 999px; padding: 12px 20px; min-height: 52px;
-  background: var(--accent); color: #fff; cursor: pointer;
+  background: var(--accent); color: var(--on-accent); cursor: pointer;
 }
 button.btn:active { background: var(--accent-press); }
 button.btn.secondary { background: var(--card-2); color: var(--ink); }
@@ -127,7 +163,7 @@ button.btn.block { width: 100%; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
 details summary { cursor: pointer; font-weight: 700; color: var(--ink); list-style: none; min-height: 32px; display: flex; align-items: center; gap: 8px; }
 details summary::-webkit-details-marker { display: none; }
-details summary::before { content: "+"; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; flex: none; }
+details summary::before { content: "+"; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 800; flex: none; }
 details[open] summary::before { content: "−"; }
 details[open] summary { margin-bottom: 14px; }
 ul.list { list-style: none; margin: 0; padding: 0; }
@@ -137,8 +173,8 @@ ul.list .grow { flex: 1; min-width: 0; }
 ul.list .num { font-family: var(--num); font-size: 22px; font-weight: 700; white-space: nowrap; }
 .x { border: 0; background: none; color: var(--ink-3); font-size: 22px; width: 36px; height: 40px; border-radius: 50%; cursor: pointer; flex: none; }
 .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--card-2); color: var(--ink-2); vertical-align: 1px; }
-.tag.red { background: var(--accent-soft); color: #ff6b76; }
-.tag.good { background: rgba(51,209,122,.15); color: var(--good); }
+.tag.red { background: var(--accent-soft); color: var(--accent-text); }
+.tag.good { background: var(--good-soft); color: var(--good); }
 .bar { height: 8px; background: var(--card-2); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .bar.good > span { background: var(--good); }
@@ -146,11 +182,11 @@ ul.list .num { font-family: var(--num); font-size: 22px; font-weight: 700; white
 .big small { font-size: 20px; font-weight: 600; color: var(--ink-2); }
 .chart { position: relative; touch-action: pan-y; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-.chart .tip { position: absolute; top: 0; pointer-events: none; background: #fff; color: #000; font-size: 13px; padding: 7px 9px; border-radius: 9px; white-space: nowrap; transform: translateX(-50%); display: none; z-index: 2; }
+.chart .tip { position: absolute; top: 0; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 13px; padding: 7px 9px; border-radius: 9px; white-space: nowrap; transform: translateX(-50%); display: none; z-index: 2; }
 .legend { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); margin-top: 10px; flex-wrap: wrap; }
 .legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .lg-line { width: 16px; height: 3px; border-radius: 2px; background: var(--accent); }
-.lg-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; }
+.lg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
 .lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink-3); }
 .lg-goal { width: 16px; border-top: 2px dotted var(--ink-2); }
 .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
@@ -175,10 +211,10 @@ code.url { display: block; word-break: break-all; background: var(--card-2); bor
 .locked .lock { font-size: 36px; }
 /* lab status */
 .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px 3px 7px; border-radius: 999px; white-space: nowrap; }
-.st i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 11px; color: #000; }
-.st.good { background: rgba(51,209,122,.14); color: var(--good); } .st.good i { background: var(--good); }
-.st.warn { background: rgba(255,197,51,.14); color: var(--warn); } .st.warn i { background: var(--warn); }
-.st.bad { background: rgba(255,90,74,.16); color: var(--bad); } .st.bad i { background: var(--bad); }
+.st i { font-style: normal; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 11px; color: var(--bg); }
+.st.good { background: var(--good-soft); color: var(--good); } .st.good i { background: var(--good); }
+.st.warn { background: var(--warn-soft); color: var(--warn); } .st.warn i { background: var(--warn); }
+.st.bad { background: var(--bad-soft); color: var(--bad); } .st.bad i { background: var(--bad); }
 .st.none { background: var(--card-2); color: var(--ink-2); } .st.none i { background: var(--none); }
 .lab-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .lab-row:first-of-type { border-top: 0; }
@@ -206,7 +242,7 @@ dl.gloss dd { margin: 2px 0 0; color: var(--ink-2); font-size: 15px; }
 .sheet-bg.open { display: block; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; max-height: 92vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  background: #101010; border-radius: 22px 22px 0 0; padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  background: var(--sheet); border-radius: 22px 22px 0 0; padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
   transform: translateY(100%); transition: transform .28s ease; max-width: 640px; margin: 0 auto; border-top: 1px solid var(--line);
 }
 .sheet.open { transform: translateY(0); }
@@ -218,7 +254,7 @@ dl.gloss dd { margin: 2px 0 0; color: var(--ink-2); font-size: 15px; }
 nav.tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   display: grid; grid-template-columns: repeat(5, 1fr);
-  background: rgba(10,10,10,.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  background: var(--bar-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
 }
 nav.tabs button {
@@ -226,11 +262,11 @@ nav.tabs button {
   display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 52px;
 }
 nav.tabs button svg { width: 26px; height: 26px; }
-nav.tabs button.on { color: #fff; }
+nav.tabs button.on { color: var(--ink); }
 nav.tabs button.on svg { color: var(--accent); }
 #toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
-  background: #fff; color: #000; font-weight: 600; padding: 11px 18px; border-radius: 999px; font-size: 15px; opacity: 0;
+  background: var(--ink); color: var(--bg); font-weight: 600; padding: 11px 18px; border-radius: 999px; font-size: 15px; opacity: 0;
   transition: opacity .25s, transform .25s; pointer-events: none; z-index: 40; max-width: calc(100% - 32px); text-align: center;
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -242,11 +278,17 @@ nav.tabs button.on svg { color: var(--accent); }
 .ftotal { background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 15px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
-.chip.on { background: var(--accent); color: #fff; }
+.chip.on { background: var(--accent); color: var(--on-accent); }
 .pick-list { display: grid; gap: 8px; }
+.theme-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.theme-opt { border: 2px solid; border-radius: 14px; padding: 12px; text-align: left; font: inherit; cursor: pointer; display: grid; gap: 4px; }
+.theme-opt .sw { display: block; height: 34px; border-radius: 8px; position: relative; margin-bottom: 4px; }
+.theme-opt .sw i { position: absolute; left: 8px; right: 40%; top: 13px; height: 8px; border-radius: 4px; }
+.theme-opt small { font-weight: 700; }
+.tagline { font-family: var(--num); font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-text); font-size: 15px; margin: 2px 0 10px; }
 .days { display: grid; gap: 10px; margin-top: 14px; }
 .day-card { background: var(--card-2); border-radius: 14px; padding: 12px 14px; border: 1.5px solid transparent; }
-.day-card.today { border-color: var(--accent); background: #1f1416; }
+.day-card.today { border-color: var(--accent); background: linear-gradient(160deg, var(--hero-top), var(--card-2) 70%); }
 .day-card.rest { opacity: .78; } .day-card.done { box-shadow: inset 4px 0 0 var(--good); }
 .day-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 14px; }
 .day-title { font-family: var(--num); font-size: 22px; font-weight: 800; text-transform: uppercase; margin: 2px 0 4px; }
@@ -272,9 +314,9 @@ label.chip.chk { display: inline-flex; align-items: center; gap: 6px; margin: 0;
 ol.steps { list-style: none; margin: 0; padding: 0; }
 ol.steps li { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); font-size: 17px; }
 ol.steps li:first-child { border-top: 0; }
-ol.steps span { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-family: var(--num); font-weight: 800; font-size: 18px; }
+ol.steps span { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-family: var(--num); font-weight: 800; font-size: 18px; }
 .kcalbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-.kcalbar > div { background: rgba(255,255,255,.05); border-radius: 12px; padding: 10px 12px; }
+.kcalbar > div { background: rgba(0,0,0,.2); border-radius: 12px; padding: 10px 12px; }
 .kcalbar span { display: block; } .kcalbar span + b { font-size: 26px; font-weight: 800; } .kcalbar b + span { display: inline; }
 label[hidden] { display: none !important; }
 .foldable > h2 { cursor: pointer; user-select: none; -webkit-user-select: none; }
@@ -291,13 +333,13 @@ label[hidden] { display: none !important; }
 .ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
 .ladder div { background: var(--card-2); border-radius: 10px; padding: 8px 6px; font-size: 12px; color: var(--ink-3); text-align: center; line-height: 1.25; }
 .ladder span { display: block; font-family: var(--num); font-size: 20px; font-weight: 800; }
-.ladder .done { color: var(--good); } .ladder .now { background: var(--accent); color: #fff; }
+.ladder .done { color: var(--good); } .ladder .now { background: var(--accent); color: var(--on-accent); }
 #recap { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.86); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; transition: opacity .25s; }
 #recap.show { opacity: 1; }
-#recap .recap-in { background: linear-gradient(160deg, #2a0a0e 0%, #151515 60%); border: 1px solid #3a1418; border-radius: 22px; padding: 22px 18px; max-width: 440px; width: 100%; max-height: 90vh; overflow-y: auto; }
+#recap .recap-in { background: linear-gradient(160deg, var(--hero-top) 0%, var(--card) 60%); border: 1px solid var(--hero-border); border-radius: 22px; padding: 22px 18px; max-width: 440px; width: 100%; max-height: 90vh; overflow-y: auto; }
 #recap h3 { font-family: var(--num); font-size: 34px; font-weight: 800; text-transform: uppercase; margin: 6px 0 14px; line-height: 1.05; }
 .recap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-.recap-grid > div { background: rgba(255,255,255,.05); border-radius: 14px; padding: 12px; }
+.recap-grid > div { background: rgba(0,0,0,.2); border-radius: 14px; padding: 12px; }
 .big2 { font-size: 34px; font-weight: 800; line-height: 1.1; }
 #recap .rc { opacity: 0; transform: translateY(14px); }
 #recap.show .rc { animation: rcIn .5s ease forwards; animation-delay: var(--d); }
@@ -309,7 +351,7 @@ canvas.confetti { position: fixed; inset: 0; z-index: 60; pointer-events: none; 
 </head>
 <body>
 <header class="top">
-  <div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#000"/><path d="M13 52V22l17 19 17-19v30" fill="none" stroke="#e8202f" stroke-width="8.5" stroke-linejoin="miter" stroke-miterlimit="10"/><path d="M47 24V13" stroke="#e8202f" stroke-width="8.5"/><path d="M47 3 58 16H36Z" fill="#e8202f"/></svg><div><div class="eyebrow" id="eyebrow"></div><h1 id="title">Home</h1></div></div>
+  <div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--bg)"/><path d="M13 52V22l17 19 17-19v30" fill="none" stroke="var(--accent)" stroke-width="8.5" stroke-linejoin="miter" stroke-miterlimit="10"/><path d="M47 24V13" stroke="var(--accent)" stroke-width="8.5"/><path d="M47 3 58 16H36Z" fill="var(--accent)"/></svg><div><div class="eyebrow" id="eyebrow"></div><h1 id="title">Home</h1></div></div>
   <button class="icon-btn" data-act="settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
@@ -332,7 +374,7 @@ const DEFAULTS = {
   v: 6,
   settings: {
     name: "", setupDone: false, heightIn: null, startWeight: null, startDate: null, goals: [],
-    weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
+    theme: "dark", weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
     // suggestions shown when logging; names you type in get added
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
@@ -495,6 +537,14 @@ function toast(msg) {
 }
 
 let db = load(); save();
+const THEMES = { dark: { name: "Dark", bg: "#0F1114", card: "#2E3136", accent: "#C5F36B" }, navy: { name: "Navy", bg: "#101B2D", card: "#243651", accent: "#55B8FF" } };
+function applyTheme() {
+  const t = THEMES[db.settings.theme] ? db.settings.theme : "dark";
+  if (t === "navy") document.documentElement.dataset.theme = "navy"; else delete document.documentElement.dataset.theme;
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = THEMES[t].bg;
+  try { localStorage.setItem(KEY + ".theme", t); } catch (e) {}
+}
+applyTheme();
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
 
 // =====================================================================
@@ -659,31 +709,31 @@ function drawChart(el, o) {
   const sy = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
   let g = "";
   for (let v = y0; v <= y1 + 1e-9; v += step) {
-    g += `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}" stroke="#262626" stroke-width="1"/>`;
-    g += `<text x="${L - 7}" y="${sy(v) + 4}" text-anchor="end" font-size="11" fill="#7c7c7c">${step < 1 ? v.toFixed(1) : Math.round(v)}</text>`;
+    g += `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--chart-grid)" stroke-width="1"/>`;
+    g += `<text x="${L - 7}" y="${sy(v) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)">${step < 1 ? v.toFixed(1) : Math.round(v)}</text>`;
   }
   // x labels: at the given ticks (e.g. one per month), otherwise 4 evenly spaced
   let xt = o.xticks ? [...new Set(o.xticks)] : [0, 1, 2, 3].map(i => x0 + (x1 - x0) * i / 3);
   while (xt.length > 6) xt = xt.filter((_, i) => i % 2 === 0);
   xt.forEach((t, i) => {
     const anchor = o.xticks ? (sx(t) - L < 20 ? "start" : W - R - sx(t) < 20 ? "end" : "middle") : i === 0 ? "start" : i === xt.length - 1 ? "end" : "middle";
-    g += `<text x="${sx(t)}" y="${H - 7}" text-anchor="${anchor}" font-size="11" fill="#7c7c7c">${(o.xfmt || (d => fmtD(d)))(dstr(new Date(t)))}</text>`;
+    g += `<text x="${sx(t)}" y="${H - 7}" text-anchor="${anchor}" font-size="11" fill="var(--ink-3)">${(o.xfmt || (d => fmtD(d)))(dstr(new Date(t)))}</text>`;
   });
   for (const r of o.refs || []) {
     const ry = sy(r.y);
-    g += `<line x1="${L}" x2="${W - R}" y1="${ry}" y2="${ry}" stroke="${r.strong ? "#ffffff" : "#9a9a9a"}" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"/>`;
-    g += `<text x="${W - R + 6}" y="${ry + 4}" font-size="11" font-weight="700" fill="${r.strong ? "#ffffff" : "#9a9a9a"}">${esc(r.label)}</text>`;
+    g += `<line x1="${L}" x2="${W - R}" y1="${ry}" y2="${ry}" stroke="${r.strong ? "var(--ink)" : "var(--ink-2)"}" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"/>`;
+    g += `<text x="${W - R + 6}" y="${ry + 4}" font-size="11" font-weight="700" fill="${r.strong ? "var(--ink)" : "var(--ink-2)"}">${esc(r.label)}</text>`;
   }
   const big = o.points.length < 40;
   const dots = o.points.map(p => p.hollow
-    ? `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="#151515" stroke="#8a8a8a" stroke-width="2"/>`
-    : `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="#ffffff" stroke="#151515" stroke-width="2"/>`).join("");
+    ? `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="var(--card)" stroke="var(--ink-3)" stroke-width="2"/>`
+    : `<circle cx="${sx(p.t)}" cy="${sy(p.y)}" r="${big ? 4.5 : 3}" fill="var(--ink)" stroke="var(--card)" stroke-width="2"/>`).join("");
   const path = o.line && o.line.length ? smoothPath(o.line.map(p => [sx(p.t), sy(p.y)])) : "";
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || "chart")}">${g}
     ${path ? `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
     ${dots}
-    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#7c7c7c" stroke-width="1" visibility="hidden"/>
-    <circle class="hl" r="7" fill="var(--accent)" stroke="#fff" stroke-width="2" visibility="hidden"/>
+    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/>
+    <circle class="hl" r="7" fill="var(--accent)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
   </svg><div class="tip"></div>`;
   const svg = $("svg", el), tip = $(".tip", el), cross = $(".cross", el), hl = $(".hl", el);
   const show = ev => {
@@ -1269,7 +1319,9 @@ function viewInstall() {
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   const shareIcon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M12 3v13"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
   return `<div class="card hero" style="text-align:center">${document.querySelector("header .logo").outerHTML.replace('class="logo"', 'class="logo" style="width:84px;height:84px;margin:6px auto 10px;display:block"')}
-    <h2 style="justify-content:center">Install Momentum</h2>
+    <div class="n" style="font-size:34px;font-weight:800;text-transform:uppercase;line-height:1">Momentum</div>
+    <div class="tagline">Track / Lift / Improve</div>
+    <h2 style="justify-content:center">Install the app</h2>
     <p class="muted" style="margin-top:0">Add Momentum to your home screen so it opens like an app, full screen.</p></div>
   <div class="card"><ol class="steps">
     <li><span>1</span><div>Tap <b>Share</b> ${shareIcon} ${ios ? "in Safari's toolbar" : "or your browser's menu ⋮"}.</div></li>
@@ -1281,7 +1333,7 @@ function viewInstall() {
 const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,.txt,application/json,text/plain" data-act="import" style="display:none"></label>`;
 function viewSetup() {
   const s = db.settings;
-  return `<div class="card hero"><h2>Let's set you up</h2>
+  return `<div class="card hero"><div class="n" style="font-size:30px;font-weight:800;text-transform:uppercase;line-height:1">Momentum</div><div class="tagline">Track / Lift / Improve</div><h2>Let's set you up</h2>
     <p class="muted" style="margin-top:0">A few details to personalize your tracker. Everything stays on this device, and you can change it later in Settings.</p>
     <form data-form="setup">
       <label>Your name<input name="name" value="${esc(s.name)}" placeholder="optional" autocomplete="given-name"></label>
@@ -2167,7 +2219,7 @@ const cardioRow = c => { const a = actFor(c.type), r = cardioCalc(c);
   const bits = [fmtDay(c.date), c.speed ? `${nf(c.speed)} mph` : "", c.incline ? `${nf(c.incline)}% incline` : "", c.where === "treadmill" ? "treadmill" : "",
     !c.speed && a.mode !== "incline" && c.intensity ? INTENSITY[c.intensity] : "", c.hr ? `♥ ${c.hr} bpm` : "", c.src === "health" ? "Apple Health" : ""].filter(Boolean);
   return `<li><div class="grow">${esc(a.name === "Custom" && c.name ? c.name : a.name)}${a.upper ? ' <span class="tag red">Upper</span>' : ""}<div class="faint">${esc(bits.join(" · "))}</div>
-    <div class="faint">≈ ${r.kcal} cal <span style="opacity:.8">· ${esc(r.method)}</span></div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`; };
+    <div class="faint">≈ ${r.kcal} cal <span>· ${esc(r.method)}</span></div></div><span class="num">${c.min} min</span>${rowBtns("cardio", c.id)}</li>`; };
 function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
   const thisWeek = newestFirst(db.cardio.filter(c => c.date >= ws)), older = newestFirst(db.cardio.filter(c => c.date < ws));
@@ -2236,7 +2288,7 @@ function fitStrength() {
     <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`}
   <div class="card"><h2>Strength goals ${goalsLink}</h2>
     ${goals.length ? goalList(goals) : `<p class="faint">No strength goals yet — add them in Settings.</p>`}
-    ${cleared && s.clearedDate ? `<p class="faint">Cleared for upper-body work on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
+    ${lm === "off" && s.clearedDate ? `<p class="faint">Cleared for upper-body work on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
   <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.strengthTarget} min</small></h2>${weekBars(db.strength, s.strengthTarget)}</div>
   ${older.length ? `<div class="card"><h2>Earlier workouts</h2>${moreList(older, 10, exRow("strength"))}</div>` : ""}`;
 }
@@ -2922,7 +2974,8 @@ function pdfWeekPage(g, gs, w, label) {
     const fs = 10 * scale, lh = fs * 1.35, maxw = (indent) => W - 2 * M - 16 - indent * 18;
     const wrap = (t, size, ind) => { const words = t.split(" "), out = []; let cur = ""; for (const wd of words) { const tryS = cur ? cur + " " + wd : wd; if (tryS.length * size * 0.5 > maxw(ind) && cur) { out.push(cur); cur = wd; } else cur = tryS; } if (cur) out.push(cur); return out; };
     let y = top - 60, ops = [];
-    const header = [`0.91 0.13 0.18 rg ${M} ${top - 22} 26 26 re f`, `1 1 1 rg BT /F2 18 Tf ${M + 6} ${top - 16} Td (M) Tj ET`, `0 0 0 rg BT /F2 16 Tf ${M + 36} ${top - 10} Td (${pdfTxt(`Momentum - ${g.name} plan`)}) Tj ET`,
+    const acc = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map(v => (+v / 255).toFixed(3)).join(" ");
+    const header = [`${acc} rg ${M} ${top - 22} 26 26 re f`, `0.06 0.07 0.08 rg BT /F2 18 Tf ${M + 6} ${top - 16} Td (M) Tj ET`, `0 0 0 rg BT /F2 16 Tf ${M + 36} ${top - 10} Td (${pdfTxt(`Momentum - ${g.name} plan`)}) Tj ET`,
       `0.35 0.35 0.35 rg BT /F1 9 Tf ${M + 36} ${top - 23} Td (${pdfTxt(`${label} - ${fmtD(w.start)} to ${fmtD(addDays(w.start, 6))}, ${parseD(w.start).getFullYear()} - ${LEVELS[w.lvl]} level - ${gs.days} days/week - ${equipTxt}${lockMode() === "push" ? " - no pushing/overhead" : lockMode() === "all" ? " - no upper body" : ""}`)}) Tj ET`,
       `BT /F1 9 Tf ${M} ${top - 42} Td (${pdfTxt(`Check off each workout as you finish it.  ${weekStats(w).done} of ${weekStats(w).total} done so far.`)}) Tj ET`, "0 0 0 rg 0 0 0 RG 0.7 w"];
     ops.push(...header);
@@ -3016,7 +3069,8 @@ function confetti() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const c = document.createElement("canvas"), ctx = c.getContext("2d"), W = c.width = innerWidth, H = c.height = innerHeight;
   c.className = "confetti"; document.body.appendChild(c);
-  const cols = ["#e8202f", "#ffffff", "#33d17a", "#ffc533", "#ff6b76"];
+  const cs = getComputedStyle(document.documentElement), cv = k => cs.getPropertyValue(k).trim();
+  const cols = [cv("--accent"), cv("--ink"), cv("--good"), cv("--warn"), cv("--accent")];
   const P = [...Array(140)].map(() => ({ x: W / 2 + (Math.random() - .5) * W * .3, y: H * .35, vx: (Math.random() - .5) * 12, vy: -Math.random() * 14 - 4,
     s: 5 + Math.random() * 6, r: Math.random() * 6, vr: (Math.random() - .5) * .3, c: cols[Math.floor(Math.random() * cols.length)] }));
   const t0 = performance.now();
@@ -3329,6 +3383,9 @@ function viewSettings() {
   const backupAge = backupAgeDays();
   return `
   ${isStandalone() ? `<div class="banner"><b>Tip:</b> links opened by the Apple Health Shortcut land in Safari, which keeps separate data from this home-screen app. Have the Shortcut copy the link instead, then tap <b>Sync from Health</b> on Home.</div>` : ""}
+  <div class="card"><h2>Appearance</h2>
+    <div class="theme-pick">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-opt${(db.settings.theme || "dark") === k ? " on" : ""}" data-act="theme" data-v="${k}" style="background:${t.bg};border-color:${(db.settings.theme || "dark") === k ? t.accent : t.card}">
+      <span class="sw" style="background:${t.card}"><i style="background:${t.accent}"></i></span><b style="color:#F5F8FC">${t.name}</b><small style="color:${t.accent}">${(db.settings.theme || "dark") === k ? "✓ In use" : "Tap to use"}</small></button>`).join("")}</div></div>
   <div class="banner"><b>Your entries save automatically.</b> Anything you log — weigh-ins, meals, fasts, workouts, labs — is stored on this device the moment you tap Save or Add. The only button you need on this page is <b>Save these settings</b> after changing the profile and goals below. Use <b>Back up all my data</b> to keep a copy off this device.</div>
   <div class="card"><h2>Apple Health sync</h2>
     <p class="muted" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
@@ -3509,7 +3566,7 @@ document.addEventListener("change", e => {
     const made = data.exportedAt ? ` from ${fmtDT(data.exportedAt)}` : "";
     if (!confirm(`Restore this backup${made}?\n\n${n("weights")} weigh-ins, ${n("meals")} meals, ${n("cardio") + n("strength") + n("core")} workouts, ${n("labs")} lab results.\n\nIt replaces everything currently on this device (a safety copy of the current data is kept).`)) return;
     try { localStorage.setItem(KEY + ".before-restore", JSON.stringify(db)); } catch (err) {}
-    localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); current = "home"; render(); toast("Backup restored");
+    localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); applyTheme(); current = "home"; render(); toast("Backup restored");
   }).catch(err => alert("Couldn't restore that file: " + err.message));
 });
 document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealFormOpen = e.target.open; }, true);
@@ -3616,6 +3673,7 @@ document.addEventListener("click", e => {
   }
   if (act === "qaDismiss") { qaSaved = null; qaRefresh(); return; }
   if (act === "saveAnyway") { draft.force = true; const f = $("form[data-form=meal]"); if (f) f.requestSubmit(); return; }
+  if (act === "theme") { db.settings.theme = el.dataset.v; save(); applyTheme(); render(); toast(`${THEMES[el.dataset.v].name} theme on`); return; }
   if (act === "browserOk") { browserOk = true; try { localStorage.setItem(KEY + ".browserOk", "1"); } catch (err) {} render(); return; }
   if (act === "closeRecap") { const r = $("#recap"); if (r) { r.classList.remove("show"); setTimeout(() => r.remove(), 250); } return; }
   if (act === "recap") { showRecap(el.dataset.d); return; }
