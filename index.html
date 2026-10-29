@@ -206,6 +206,8 @@ td.v { font-family: var(--num); font-size: 19px; font-weight: 700; white-space: 
 .banner { background: var(--card-2); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; color: var(--ink-2); }
 .banner b { color: var(--ink); }
 .banner.warn { border-left-color: var(--warn); }
+.lvl-row { padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.lvl-row:first-of-type { border-top: 0; }
 code.url { display: block; word-break: break-all; background: var(--card-2); border-radius: 10px; padding: 10px; font-size: 13px; margin: 6px 0 12px; color: var(--ink-2); }
 .locked { text-align: center; padding: 24px 16px; }
 .locked .lock { font-size: 36px; }
@@ -2642,12 +2644,43 @@ let coachSel = null;
 const coach = () => { const s = db.settings; if (!s.coach || typeof s.coach !== "object") s.coach = { goals: {} }; if (!s.coach.goals) s.coach.goals = {}; return s.coach; };
 const goalLocked = g => !!g.upper && blocks("pull");
 const goalTests = g => g.tests.filter(k => !(CTESTS[k].upper && blocks(CTESTS[k].mv || "push")));
-const SAFETY = `<div class="banner warn"><b>Safety first.</b> Coach gives general guidance, not medical advice. Check with your doctor before starting a new exercise program — especially with a health condition, an injury, or symptoms like chest pain, dizziness or shortness of breath. Stop if something hurts.</div>`;
+const SAFETY_FULL = "Coach gives general guidance, not medical advice. Check with your doctor before starting a new exercise program — especially with a health condition, an injury, or symptoms like chest pain, dizziness or shortness of breath. Stop if something hurts.";
+const SAFETY = `<div class="banner warn" id="safety"><b>Safety first:</b> general guidance, not medical advice. <a href="#" data-act="safetyMore" style="color:var(--accent-text);font-weight:700">More</a></div>`;
 function levelFrom(vals) {
   const s = db.settings, ls = Object.entries(vals).map(([k, v]) => testLevel(k, v, s.age, s.sex)).filter(x => x != null);
   return ls.length ? Math.floor(ls.reduce((a, b) => a + b, 0) / ls.length) : 0;
 }
 const nextRetest = gs => addDays(gs.unlockedAt || gs.started, 28);
+// One test's standing: level, the next level's target, how far to go, and progress toward it (0–1)
+function testStanding(k, v) {
+  const s = db.settings, t = CTESTS[k], [b, st] = t.cut(s.age, s.sex), lv = testLevel(k, v, s.age, s.sex);
+  if (lv == null) return null;
+  const hi = t.dir === "hi", target = lv === 0 ? b : lv === 1 ? st : null;
+  const gap = target == null ? 0 : Math.abs(target - v);
+  const frac = lv === 2 ? 1 : lv === 1 ? (v - b) / (st - b)
+    : hi ? (b > 0 ? v / b : 1 - gap / Math.abs(st - b)) : (v > 0 ? b / v : 0);
+  return { lv, target, gap, frac: Math.max(0, Math.min(1, frac)) };
+}
+const testVal = (k, v) => { const u = CTESTS[k].unit; return k === "mile" ? fmtMS(v) : nf(v) + (u === "reps" || u === "0–10" ? "" : u === "%" ? "%" : " " + u); };
+const testGap = (k, g) => k === "mile" ? `${fmtMS(g)} faster` : `${testVal(k, r1n(g))} to go`;
+function levelCard(g, gs) {
+  const last = gs.tests[gs.tests.length - 1], due = nextRetest(gs), canUnlock = today() >= due, dd = Math.round((parseD(due) - parseD(today())) / 864e5);
+  const rows = goalTests(g).map(k => {
+    const t = CTESTS[k], v = last.vals[k], x = v == null ? null : testStanding(k, v);
+    const name = t.name.replace(/ in a row$/, "");
+    if (!x) return `<div class="lvl-row"><div><b>${esc(name)}</b>: <span class="faint">not tested</span></div></div>`;
+    return `<div class="lvl-row"><div><b>${esc(name)}: ${esc(testVal(k, v))}</b> · ${LEVELS[x.lv]} · ${x.target == null ? `<span style="color:var(--good)">top level ✓</span>` : `Next: ${esc(testVal(k, x.target))}, ${esc(testGap(k, x.gap))}`}</div>
+      <div class="bar ${x.lv === 2 ? "good" : ""}" style="margin-top:6px"><span style="width:${Math.round(x.frac * 100)}%"></span></div></div>`;
+  }).join("");
+  return `<div class="card"><h2>Your level <small>${esc(g.name)}</small></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="st ${["warn", "none", "good"][last.level]}"><i>${["1", "2", "3"][last.level]}</i>${LEVELS[last.level]}</span><span class="tag">Step ${gs.stage} of 4</span></div>
+    ${rows}
+    <p class="faint" style="margin:12px 0 0">Last test ${fmtD(last.date)} · Next retest ${canUnlock ? "<b>due now</b>" : `${fmtD(due)} (in ${dd} day${dd === 1 ? "" : "s"})`}${gs.tests.length > 1 ? ` · First test ${fmtD(gs.tests[0].date)} (${LEVELS[gs.tests[0].level]})` : ""}</p>
+    <details id="retest-${g.id}" style="margin-top:12px" ${canUnlock ? "open" : ""}><summary>${canUnlock ? "Monthly retest — unlock the next step" : "Log a retest"}</summary>
+      <form data-form="coachRetest">${testInputs(g, last.vals)}<button class="btn block">Save retest</button>
+      ${canUnlock ? "" : `<p class="faint">You can log results any time; the next step unlocks with a retest on or after ${fmtD(due)}.</p>`}</form></details>
+  </div>`;
+}
 function testInputs(g, prev) {
   return goalTests(g).map(k => { const t = CTESTS[k], auto = t.auto ? t.auto() : null, v = prev && prev[k] != null ? prev[k] : auto;
     const val = v == null ? "" : k === "mile" ? fmtMS(v) : v;
@@ -2672,7 +2705,7 @@ function viewCoach() {
   if (g) body = goalLocked(g) ? `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">${esc(g.name)} is locked</h2>
       <p class="muted">This goal is built on upper-body exercises, which stay locked until your PT or doctor clears you.</p>
       <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`
-    : c.goals[g.id] ? goalDetail(g) : intake(g);
+    : c.goals[g.id] ? "" : intake(g);
   else if (active.length) body = active.map(g => { const gs = c.goals[g.id], last = gs.tests[gs.tests.length - 1];
       return `<button class="tile" data-act="coachSel" data-id="${g.id}" style="margin-bottom:12px"><div class="label">${esc(g.name)}</div>
         ${(() => { if (goalLocked(g)) return `<div class="sub">🔒 locked</div>`; const w = ensureWeeks(g, gs), st = weekStats(w), td = w.days.find(d => d.date === today());
@@ -2683,7 +2716,9 @@ function viewCoach() {
       <li>Pick a goal above and answer a short intake with a few simple tests.</li>
       <li>Your results place you at <b>Beginner</b>, <b>Building</b> or <b>Strong</b> using published age-based norms where they exist (sources shown with each goal).</li>
       <li>You get a 4-step plan starting at your level. Retest once a month to unlock the next step.</li></ol></div>`;
-  return `${SAFETY}<div class="card"><h2>Pick a goal <small>${active.length} active</small></h2>${chips}</div>${body}`;
+  const pick = `<div class="card"><h2>Pick a goal <small>${active.length} active</small></h2>${chips}</div>`;
+  if (g && !goalLocked(g) && c.goals[g.id]) return SAFETY + goalDetail(g, pick);
+  return `${SAFETY}${pick}${body}`;
 }
 function equipFields() {
   const s = db.settings, eq = new Set(s.equip || []), lim = s.limits || {};
@@ -2718,32 +2753,23 @@ function intake(g) {
       <p class="faint">Skip any test you can't do safely — your level uses the ones you enter.</p>
     </form></div>`;
 }
-function goalDetail(g) {
+function goalDetail(g, pick) {
   const s = db.settings, gs = coach().goals[g.id], last = gs.tests[gs.tests.length - 1], due = nextRetest(gs), canUnlock = today() >= due;
   const daysLeft = gs.target ? Math.round((parseD(gs.target) - parseD(today())) / 864e5) : null;
   const srcs = [...new Set(goalTests(g).map(k => CTESTS[k].src))];
-  return `<div class="card hero"><h2>${esc(g.name)} <small>${gs.days} day${gs.days === 1 ? "" : "s"}/week</small></h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="st ${["warn", "none", "good"][last.level]}"><i>${["1", "2", "3"][last.level]}</i>${LEVELS[last.level]}</span>
+  const p = planParts(g, gs);
+  return `${levelCard(g, gs)}
+    ${p.week}
+    <div class="card"><h2>${esc(g.name)} <small>${gs.days} day${gs.days === 1 ? "" : "s"}/week</small></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="tag">Step ${gs.stage} of 4</span>${daysLeft != null ? `<span class="tag">${daysLeft >= 0 ? `${Math.ceil(daysLeft / 7)} weeks to ${fmtD(gs.target)}` : `target was ${fmtD(gs.target)}`}</span>` : ""}</div>
       <div class="ladder">${g.stages.map((st, i) => `<div class="${i + 1 < gs.stage ? "done" : i + 1 === gs.stage ? "now" : ""}"><span>${i + 1 < gs.stage ? "✓" : i + 1}</span>${esc(st[0])}</div>`).join("")}</div>
       <p class="muted" style="margin:12px 0 0"><b>Step ${gs.stage}: ${esc(g.stages[gs.stage - 1][0])}.</b> 💡 ${esc(g.stages[gs.stage - 1][2])}</p>
       ${gs.injuries ? `<p class="faint" style="margin-top:8px">Your limits: ${esc(gs.injuries)} — skip or modify anything that aggravates them.</p>` : ""}
       ${gs.stage < 4 ? `<p class="faint" style="margin-top:10px">🔒 Step ${gs.stage + 1} (${esc(g.stages[gs.stage][0])}) unlocks with your monthly retest ${canUnlock ? "— <b>you can retest now</b>" : `on ${fmtD(due)}`}.</p>` : `<p class="faint" style="margin-top:10px">You've reached the final step. Keep retesting monthly to track progress.</p>`}
     </div>
-    ${planCards(g, gs)}
-    <div class="card"><h2>Your tests <small>${gs.tests.length} result${gs.tests.length === 1 ? "" : "s"}</small></h2>
-      <table><thead><tr><th>Test</th><th>Latest</th><th>Level</th></tr></thead><tbody>${goalTests(g).map(k => { const v = last.vals[k], lv = testLevel(k, v, s.age, s.sex), t = CTESTS[k];
-        return `<tr><td>${esc(t.name)}<div class="faint" style="font-size:12px">${cutText(k, s.age, s.sex)}</div></td><td class="v">${v == null ? "—" : k === "mile" ? fmtMS(v) : nf(v)}</td><td>${lv == null ? '<span class="faint">skipped</span>' : LEVELS[lv]}</td></tr>`; }).join("")}</tbody></table>
-      ${gs.tests.length > 1 ? `<p class="faint">First test ${fmtD(gs.tests[0].date)} (${LEVELS[gs.tests[0].level]}) → latest ${fmtD(last.date)} (${LEVELS[last.level]}).</p>` : ""}
-      <details id="retest-${g.id}" style="margin-top:12px" ${canUnlock ? "open" : ""}><summary>${canUnlock ? "Monthly retest — unlock the next step" : "Log a retest"}</summary>
-        <form data-form="coachRetest">${testInputs(g, last.vals)}<button class="btn block">Save retest</button>
-        ${canUnlock ? "" : `<p class="faint">You can log results any time; the next step unlocks with a retest on or after ${fmtD(due)}.</p>`}</form></details>
-    </div>
-    <div class="card"><h2>Where the levels come from</h2>
-      <p class="faint" style="margin-top:0">Levels use your age (${s.age || "not set"}) and ${s.sex === "female" ? "female" : "male"} norms where published norms exist. Tests marked "coaching benchmark" have no widely published age-based norm, so the thresholds are general coaching targets.</p>
-      <ul class="src" style="padding-left:18px;margin:0">${srcs.map(k => k ? `<li><a href="${C_SRC[k][1]}" target="_blank" rel="noopener">${esc(C_SRC[k][0])}</a></li>` : `<li>Coaching benchmark: ${esc(goalTests(g).filter(t => !CTESTS[t].src).map(t => CTESTS[t].name).join(", "))}</li>`).join("")}</ul>
-      ${goalTests(g).includes("mile") ? `<p class="faint">Mile levels are derived from 1.5-mile norms for men aged 20–59 (ages 60+ use the 50–59 values; female mile norms weren't available, so the same values are used).</p>` : ""}
-    </div>
+    ${pick}
+    ${p.past}
     <div class="card"><h2>Plan settings</h2>
       <form data-form="coachPlan"><div class="row">
         <label>Days per week<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === gs.days ? " selected" : ""}>${d}</option>`).join("")}</select></label>
@@ -2753,7 +2779,16 @@ function goalDetail(g) {
         <label>Other injuries or notes<textarea name="injuries" rows="2">${esc(gs.injuries || "")}</textarea></label>
         <button class="btn secondary block">Save and rebuild this week</button>
         <p class="faint">Workouts you've already checked off this week are kept.</p></form>
-      <button class="btn danger block" style="margin-top:10px" data-act="coachStop" data-id="${g.id}">Stop this goal</button></div>`;
+      <button class="btn danger block" style="margin-top:10px" data-act="coachStop" data-id="${g.id}">Stop this goal</button></div>
+    <div class="card"><h2>How this works</h2>
+      <h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px">Guidelines behind this plan</h4>
+      ${p.guide}
+      <h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:18px 0 8px">Where the levels come from</h4>
+      <p class="faint" style="margin-top:0">Levels use your age (${s.age || "not set"}) and ${s.sex === "female" ? "female" : "male"} norms where published norms exist. Tests marked "coaching benchmark" have no widely published age-based norm, so the thresholds are general coaching targets.</p>
+      <ul class="src" style="padding-left:18px;margin:0">${srcs.map(k => k ? `<li><a href="${C_SRC[k][1]}" target="_blank" rel="noopener">${esc(C_SRC[k][0])}</a></li>` : `<li>Coaching benchmark: ${esc(goalTests(g).filter(t => !CTESTS[t].src).map(t => CTESTS[t].name).join(", "))}</li>`).join("")}</ul>
+      ${goalTests(g).includes("mile") ? `<p class="faint">Mile levels are derived from 1.5-mile norms for men aged 20–59 (ages 60+ use the 50–59 values; female mile norms weren't available, so the same values are used).</p>` : ""}
+    
+    </div>`;
 }
 const coachForms = {
   coachStart(f) {
@@ -3185,14 +3220,15 @@ function fitBanner(g, gs, w) {
       ${f.mins ? `<button class="btn secondary small" data-act="planFit" data-g="${g.id}" data-mins="${f.mins}">Use ${f.mins} min</button>` : ""}
       ${f.combos.map(c => `<button class="btn secondary small" data-act="planFit" data-g="${g.id}" data-days="${c.d}" data-mins="${c.m}">Use ${c.d} days × ${c.m} min</button>`).join("")}</div></div>`;
 }
-function planCards(g, gs) {
+function planParts(g, gs) {
   const w = ensureWeeks(g, gs), b = gs.blocks.find(x => x.n === w.block) || curBlock(gs), next = gs.weeks[addDays(w.start, 7)];
   const past = Object.keys(gs.weeks).filter(k => k < w.start).sort().reverse();
   const used = [...new Set(w.days.flatMap(d => [...d.src, ...d.items.map(i => i.src)]).filter(Boolean))];
   const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment", bs = blockStats(g, gs, b);
   const lastClosed = gs.showSummary ? gs.blocks.find(x => x.n === gs.showSummary && x.closed) : null, retested = w.wk === 4 && blockRetest(gs, b);
   const weekLabel = i => i === 3 ? "Recovery + retest" : `Build ${i + 1}`;
-  return `${lastClosed ? summaryCard(g, gs, lastClosed, false) : ""}
+  const closedBlocks = gs.blocks.filter(x => x.closed);
+  const week = `${lastClosed ? summaryCard(g, gs, lastClosed, false) : ""}
     <div class="card hero"><h2>Block ${b.n} · Week ${w.wk} of 4 <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
       ${w.deload ? `<span class="tag red">Recovery week · ~30% lighter</span>` : ""}
       ${weekProgress(w)}
@@ -3212,17 +3248,18 @@ function planCards(g, gs) {
     </div>
     ${retested ? summaryCard(g, gs, b, true) : ""}
     ${next ? `<div class="card"><h2>Next week's plan <small>${next.block !== w.block ? `Block ${next.block} · ` : ""}Week ${next.wk} of 4</small></h2>
-      <p class="muted" style="margin-top:0">${esc(next.note)}</p><div class="days">${next.days.map((_, i) => dayCard(g.id, next, i, "locked")).join("")}</div></div>` : ""}
-    <div class="card"><h2>Past weeks <small>${past.length}</small></h2>
+      <p class="muted" style="margin-top:0">${esc(next.note)}</p><div class="days">${next.days.map((_, i) => dayCard(g.id, next, i, "locked")).join("")}</div></div>` : ""}`;
+  // only once a week has finished
+  const pastHtml = !past.length && !closedBlocks.length ? "" : `<div class="card"><h2>Past weeks <small>${past.length}</small></h2>
       ${past.length ? past.map(k => { const pw = gs.weeks[k], st = weekStats(pw);
         return `<details id="pw-${g.id}-${k}" style="margin-top:8px"><summary>${pw.block ? `B${pw.block} W${pw.wk} · ` : ""}${fmtD(k)} – ${fmtD(addDays(k, 6))} · ${st.done}/${st.total} ${st.total && st.done >= st.total ? "✓ Finished" : ""}</summary>
           <p class="faint" style="margin-top:0">${esc(pw.note)}</p><div class="days">${pw.days.map((_, i) => dayCard(g.id, pw, i, "view")).join("")}</div></details>`; }).join("")
-        : `<p class="faint" style="margin:0">Finished weeks will show up here.</p>`}
-      ${gs.blocks.filter(x => x.closed).length ? `<h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 4px">Past blocks</h4>
-        ${gs.blocks.filter(x => x.closed).reverse().map(x => `<details id="pb-${g.id}-${x.n}" style="margin-top:8px"><summary>Block ${x.n} · ${x.summary ? `${x.summary.done}/${x.summary.total} workouts` : ""} · ${{ harder: "improved", same: "held steady", easier: "slipped" }[x.outcome] || ""}</summary>${summaryCard(g, gs, x, false).replace('<div class="card hero">', '<div>').replace(/<button class="btn ghost small" data-act="planSummaryHide"[^>]*>Hide summary<\/button>/, "")}</details>`).join("")}` : ""}</div>
-    <div class="card"><h2>Guidelines behind this plan</h2>
-      <ul class="src" style="padding-left:18px;margin:0">${used.map(k => `<li><a href="${PLAN_SRC[k][1]}" target="_blank" rel="noopener">${esc(PLAN_SRC[k][0])}</a></li>`).join("")}</ul>
-      <p class="faint" style="margin-bottom:0">Plans run in 4-week blocks: weeks 1–3 build gradually, week 4 drops about 30% of the volume and ends with a retest. Set counts, rest times, interval patterns, the recovery-week cut and exercise choices are the app's coaching defaults built around these guidelines. Within a block: most workouts done${["fat", "recomp", "heart"].includes(g.id) ? " and a lower weekly weight average" : ""} → step up slightly; fewer than half → ease back; otherwise repeat. After the retest: improved → next block harder; steady → same; slipped → easier.</p></div>`;
+        : ""}
+      ${closedBlocks.length ? `<h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 4px">Past blocks</h4>
+        ${gs.blocks.filter(x => x.closed).reverse().map(x => `<details id="pb-${g.id}-${x.n}" style="margin-top:8px"><summary>Block ${x.n} · ${x.summary ? `${x.summary.done}/${x.summary.total} workouts` : ""} · ${{ harder: "improved", same: "held steady", easier: "slipped" }[x.outcome] || ""}</summary>${summaryCard(g, gs, x, false).replace('<div class="card hero">', '<div>').replace(/<button class="btn ghost small" data-act="planSummaryHide"[^>]*>Hide summary<\/button>/, "")}</details>`).join("")}` : ""}</div>`;
+  const guide = `<ul class="src" style="padding-left:18px;margin:0">${used.map(k => `<li><a href="${PLAN_SRC[k][1]}" target="_blank" rel="noopener">${esc(PLAN_SRC[k][0])}</a></li>`).join("")}</ul>
+      <p class="faint" style="margin-bottom:0">Plans run in 4-week blocks: weeks 1–3 build gradually, week 4 drops about 30% of the volume and ends with a retest. Set counts, rest times, interval patterns, the recovery-week cut and exercise choices are the app's coaching defaults built around these guidelines. Within a block: most workouts done${["fat", "recomp", "heart"].includes(g.id) ? " and a lower weekly weight average" : ""} → step up slightly; fewer than half → ease back; otherwise repeat. After the retest: improved → next block harder; steady → same; slipped → easier.</p>`;
+  return { week, past: pastHtml, guide };
 }
 
 // ---------- one-page PDF with checkboxes (no library: plain PDF 1.4 with built-in Helvetica)
@@ -3367,7 +3404,7 @@ function confetti(opt = {}) {
 // =====================================================================
 // Collapsible cards: every card with a heading can fold; state is remembered per section
 // =====================================================================
-const COLLAPSED_BY_DEFAULT = new Set(["All readings", "All weigh-ins", "Recent fasts", "Earlier sessions", "Earlier workouts", "Recent core work", "Food list", "My exercises", "Danger zone", "Exercise guide", "Where the levels come from", "Plan settings"]);
+const COLLAPSED_BY_DEFAULT = new Set(["All readings", "All weigh-ins", "Recent fasts", "Earlier sessions", "Earlier workouts", "Recent core work", "Food list", "My exercises", "Danger zone", "Exercise guide", "Where the levels come from", "Plan settings", "How this works"]);
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem(KEY + ".collapsed")) || {}; } catch (e) {}
 function decorateCards(root) {
@@ -3954,6 +3991,7 @@ document.addEventListener("click", e => {
     save(); toast(`Plan updated — ${gs.days} days a week, ${gs.minutes || 45} minutes each`); render(); return;
   }
   if (act === "planRetest") { const d = document.getElementById("retest-" + el.dataset.g); if (d) { d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } return; }
+  if (act === "safetyMore") { e.preventDefault(); const b = $("#safety"); if (b) b.innerHTML = `<b>Safety first.</b> ${SAFETY_FULL}`; return; }
   if (act === "planSummaryHide") { const gs = coach().goals[el.dataset.g]; if (gs) { gs.showSummary = null; save(); } render(); return; }
   if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
