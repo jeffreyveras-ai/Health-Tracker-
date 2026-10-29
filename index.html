@@ -1111,7 +1111,7 @@ const SPEC = {
       [F("aliases", "Synonyms (comma separated, optional)", "text", { ph: "e.g. pb, peanut butta" })]],
     check(e) { e.aliases = e.aliases.split(",").map(x => x.trim()).filter(Boolean); if (!(e.amt > 0)) e.amt = 1; e.protein = e.protein || 0; } },
   presets: { title: "My Food", rows: [[F("name", "Name", "text", { req: 1 })]] },
-  comp: { title: "body composition", added: "Body composition saved",
+  comp: { title: "body composition", added: "Saved",
     rows: [[D()], [F("bf", "Body fat (%)", "num", { step: "0.1", min: 2, max: 75 }), F("bmi", "BMI", "num", { step: "0.1", min: 10, max: 90 })], [F("note", "Note", "text", { ph: "optional" })]],
     check: e => { if (e.bf == null && e.bmi == null) return "Enter body fat %, BMI, or both."; } },
   body: { title: "scale measurements", added: "Measurements saved",
@@ -1236,6 +1236,7 @@ function addEntry(k, f) {
   coll(k).push({ id: uid(), ...e });
   if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
   if (k === "cardio") { lastAdd.cardioType = actFor(e.type).name; logCardio = null; }
+  if (k === "comp") compOpen = false;
   save(); toast(SPEC[k].added || "Saved");
 }
 function editSheet() {
@@ -1418,6 +1419,7 @@ function bodyCard() {
 }
 // Body composition: body fat % and BMI from weigh-ins (Apple Health or typed) plus hand-entered values
 let cMetric = "bf";
+let compOpen = false; // body composition entry form shown
 function compSeries(k) {
   const pts = [];
   for (const w of db.weights) if (w[k] != null) pts.push({ date: w.date, v: w[k], src: w.src === "health" ? "health" : "weigh-in" });
@@ -1431,19 +1433,20 @@ function compCard(bfE, mmE, leanE, bmi) {
   return `<div class="card"><h2>Body composition <small>latest</small></h2>
     <button class="comp-grid" data-act="compAdd" aria-label="Add body fat or BMI">
       ${cell("Body fat", bfE ? nf(bfE.bf) + "%" : "—", bfE ? fmtD(bfE.date) : "")}
-      ${cell("Muscle mass", mmE ? r1(mmE.muscle) + " lb" : "—", "")}
-      ${cell("Lean mass", leanE ? r1(leanE.lean) + " lb" : "—", "")}
+      ${mmE ? cell("Muscle mass", r1(mmE.muscle) + " lb", "") : ""}
+      ${leanE ? cell("Lean mass", r1(leanE.lean) + " lb", "") : ""}
       ${cell("BMI", bmi != null ? r1(bmi) : "—", compLatest("bmi") ? fmtD(compLatest("bmi").date) : bmi != null ? "from height" : "")}
     </button>
     ${has ? "" : `<p class="faint" style="margin:10px 0 0">Syncs from Apple Health, or tap to add.</p>`}
     ${compSeries("bf").length || compSeries("bmi").length ? `<h2 style="margin-top:18px">Trend</h2>
       <select id="compMetric" aria-label="Measurement to chart" style="margin:0 0 10px"><option value="bf"${cMetric === "bf" ? " selected" : ""}>Body fat %</option><option value="bmi"${cMetric === "bmi" ? " selected" : ""}>BMI</option></select>
       ${n ? `<div class="chart" id="compChart"></div><div class="legend"><span><i class="lg-dot"></i>Entered / weigh-in</span><span><i class="lg-ring"></i>Apple Health</span></div>` : `<p class="faint">No ${cMetric === "bf" ? "body fat" : "BMI"} readings yet.</p>`}` : ""}
-    <details id="logComp" style="margin-top:14px" ${has ? "" : "open"}><summary>Add body fat % or BMI</summary>
-      <form data-form="add" data-k="comp">${specFields("comp", { date: today() })}<button class="btn block">Save</button></form></details>
-    ${rows.length ? `<details id="compList" style="margin-top:12px"><summary>Entered by hand (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
-      <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns("comp", x.id)}</li>`)}</details>` : ""}
-    <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under All readings.</p>
+    ${compOpen ? `<form id="logComp" data-form="add" data-k="comp" style="margin-top:14px">${specFields("comp", { date: today() })}
+      <div class="btn-row"><button class="btn" style="flex:1">Save</button><button type="button" class="btn ghost" data-act="compCancel">Cancel</button></div></form>`
+      : `<button class="btn ghost small" style="margin-top:14px" data-act="compAdd">+ Add body fat % or BMI</button>`}
+    ${rows.length ? `<details id="compAll" style="margin-top:14px"><summary>All readings (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
+      <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns("comp", x.id)}</li>`)}
+      <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under the weight log's All readings.</p></details>` : ""}
   </div>`;
 }
 const backupAgeDays = () => db.settings.lastBackup ? Math.floor((Date.now() - new Date(db.settings.lastBackup)) / 864e5) : null;
@@ -3868,7 +3871,8 @@ document.addEventListener("click", e => {
   if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "scanStart") { startScan(); return; }
-  if (act === "compAdd") { const d = $("#logComp"); if (d) { d.open = true; d.scrollIntoView({ block: "center", behavior: "smooth" }); const i = $("#logComp [name=bf]"); if (i) setTimeout(() => i.focus({ preventScroll: true }), 300); } return; }
+  if (act === "compAdd") { compOpen = true; render(); const f = $("#logComp"); if (f) { f.scrollIntoView({ block: "center", behavior: "smooth" }); const i = $("#logComp [name=bf]"); if (i) setTimeout(() => i.focus({ preventScroll: true }), 300); } return; }
+  if (act === "compCancel") { compOpen = false; render(); return; }
   if (act === "logCardio") { logCardio = { step: "group" }; renderSheet(); return; }
   if (act === "logGroup") { logCardio = { step: "act", g: +el.dataset.g }; renderSheet(); return; }
   if (act === "logAct") { logCardio = { step: "form", g: logCardio && logCardio.g, type: el.dataset.v }; renderSheet(); const m = $("#sheet [name=min]"); if (m) m.focus({ preventScroll: true }); return; }
