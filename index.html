@@ -294,6 +294,15 @@ nav.tabs button.on svg { color: var(--accent); }
 .day-title { font-family: var(--num); font-size: 22px; font-weight: 800; text-transform: uppercase; margin: 2px 0 4px; }
 .day-cardio { font-size: 15px; margin: 4px 0; } .day-items { margin: 6px 0 0; padding-left: 18px; font-size: 15px; } .day-items li { margin: 4px 0; }
 .day-done { color: var(--good); font-weight: 700; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.day-done.partial { color: var(--warn); } .day-done.skipped { color: var(--ink-2); }
+.day-card.skipped { box-shadow: inset 4px 0 0 var(--line); } .day-card.done:has(.partial) { box-shadow: inset 4px 0 0 var(--warn); }
+.day-note { margin-top: 10px; } .day-note label { margin-bottom: 8px; }
+.block-ov { margin-top: 12px; } .block-ov > summary { font-size: 15px; }
+.bw { background: var(--card-2); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+.bw.cur { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.bw > summary { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; font-size: 14px; min-height: 28px; }
+.bw > summary::before { display: none; } .bw[open] > summary { margin-bottom: 8px; }
+.recap-in.big { border-color: var(--accent); }
 .src-tag { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; vertical-align: 1px; }
 button.link { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; cursor: pointer; }
 label.chip.chk { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; } label.chip.chk input { width: 18px; height: 18px; margin: 0; }
@@ -2691,6 +2700,8 @@ const coachForms = {
     const g = CGOALS.find(x => x.id === coachSel), gs = g && coach().goals[g.id]; if (!gs) return;
     const vals = readTests(g, f), level = levelFrom(vals);
     gs.tests.push({ date: today(), vals, level });
+    const bk = curBlock(gs);
+    if (bk && blockRetest(gs, bk)) { const nx = planNext(g, gs, bk); setTimeout(() => toast(`Retest saved — ${{ harder: "next block starts a notch harder", same: "next block keeps the same difficulty", easier: "next block eases back a little" }[nx.outcome]}`), 1200); }
     if (today() >= nextRetest(gs) && gs.stage < 4) {
       gs.stage = Math.min(4, gs.stage + 1); gs.unlockedAt = today();
       save(); toast(`Step ${gs.stage} unlocked 🎉`); confetti(); return;
@@ -2740,19 +2751,20 @@ function exOk(key, ctx) {
 }
 const firstOk = (keys, ctx, used) => keys.find(k => exOk(k, ctx) && !used.has(k));
 // Strength dose by level (Beginner/Building/Strong) and progression step p
-function dose(key, lvl, p) {
+function dose(key, lvl, p, vol = 1) {
   const name = GUIDE.find(g => g.key === key).name;
   const hold = { plank: [20, 40, 60], sideplank: [15, 30, 45], hang: [10, 20, 30], squathold: [20, 45, 60], onelegstand: [20, 30, 40], hipflexor: [30, 30, 45] }[key];
   if (hold) {
-    const sec = Math.min(hold[lvl] + p * (key === "hipflexor" ? 0 : 5), key === "plank" ? 120 : 90), sets = key === "hipflexor" ? 2 : lvl === 0 ? 2 : 3;
+    const sec = Math.min(hold[lvl] + p * (key === "hipflexor" ? 0 : 5), key === "plank" ? 120 : 90), sets = Math.max(1, Math.round((key === "hipflexor" ? 2 : lvl === 0 ? 2 : 3) * vol));
     const side = ["sideplank", "onelegstand", "hipflexor"].includes(key);
     return { key, name, sets, sec, perSide: side, text: `${sets} × ${sec} s${side ? " each side" : ""}`, rest: "30–45 s", src: ["hipflexor", "squathold"].includes(key) ? "acsmFlex" : null };
   }
-  if (key === "negpullup") { const reps = Math.min(3 + p, 5); return { key, name, sets: 3, reps, text: `3 × ${reps}, 3–5 s down`, rest: "2 min", src: null }; }
-  if (key === "pullup") { const reps = Math.min(1 + p, 6); return { key, name, sets: 3, reps, text: `3 × ${reps}${reps < 3 ? " (or as many as you can)" : ""}`, rest: "2 min", src: null }; }
+  const s3 = Math.max(2, Math.round(3 * vol));
+  if (key === "negpullup") { const reps = Math.min(3 + p, 5); return { key, name, sets: s3, reps, text: `${s3} × ${reps}, 3–5 s down`, rest: "2 min", src: null }; }
+  if (key === "pullup") { const reps = Math.min(1 + p, 6); return { key, name, sets: s3, reps, text: `${s3} × ${reps}${reps < 3 ? " (or as many as you can)" : ""}`, rest: "2 min", src: null }; }
   const core = ["deadbug", "birddog", "crunch", "superman"].includes(key), side = ["deadbug", "birddog", "lunge", "dbrow"].includes(key);
   const base = core ? [8, 10, 12][lvl] : [12, 10, 8][lvl];
-  const sets = Math.min(4, [2, 3, 3][lvl] + (p >= 2 ? 1 : 0)), reps = base + (core ? 2 : 1) * (p % 2 ? 1 : 0) + (core ? 2 * Math.floor(p / 2) : 0);
+  const sets = Math.max(1, Math.round(Math.min(4, [2, 3, 3][lvl] + (p >= 2 ? 1 : 0)) * vol)), reps = base + (core ? 2 : 1) * (p % 2 ? 1 : 0) + (core ? 2 * Math.floor(p / 2) : 0);
   return { key, name, sets, reps, perSide: side, text: `${sets} × ${reps}${side ? " each side" : ""}`, rest: core ? "30–45 s" : ["60–90 s", "90 s", "2 min"][lvl], src: core ? null : "acsmRT" };
 }
 // Slot preference lists → exercise keys (first one allowed by equipment and limits wins)
@@ -2786,7 +2798,7 @@ function strengthItems(slots, lvl, p, ctx) {
     // blocked pushes get swapped for pulling or core work
     if (!k && /push/.test(sl)) k = firstOk([...SLOT_PREF.pull2(), ...SLOT_PREF.core2()], ctx, used);
     if (!k) continue;
-    used.add(k); items.push(dose(k, lvl, p));
+    used.add(k); items.push(dose(k, lvl, p, ctx.vol || 1));
   }
   if (slots === STRENGTH_SLOTS.mobility) items.push({ key: null, name: "Hamstring stretch", sets: 2, sec: 30, text: "2 × 30 s each side", rest: "", src: "acsmFlex" });
   if (slots === STRENGTH_SLOTS.balance) items.push({ key: null, name: "Heel-to-toe walk", sets: 2, reps: 10, text: "2 × 10 steps, near support", rest: "", src: null });
@@ -2812,19 +2824,19 @@ const ROTATION = {
 const DAY_PATTERN = { 1: [2], 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
 // One training session. Returns { title, cardio: {type, min, intensity, how}|null, items: [...], src: [...] }
 function session(kind, gid, lvl, stage, p, ctx, n) {
-  const base = [20, 30, 40][lvl] + (stage - 1) * 5 + p * 5, M = Math.min(base, 75);
+  const vol = ctx.vol || 1, base = [20, 30, 40][lvl] + (stage - 1) * 5 + p * 5, M = Math.max(10, Math.round(Math.min(base, 75) * vol / 5) * 5);
   const steady = (min, label) => { const types = cardioPick("steady", ctx), type = types[n % types.length];
     return { type, min, intensity: "moderate", how: `${label || "Steady"} at a moderate pace — you can talk but not sing` }; };
   if (kind === "steady") return { title: "Cardio", cardio: steady(M), items: [], src: ["cdc", "aha"] };
   if (kind === "long") return { title: "Longer easy cardio", cardio: { ...steady(Math.min(Math.round(M * 1.4 / 5) * 5, 90), "Easy"), intensity: "easy", how: "Easy, comfortable pace — the long one of the week" }, items: [], src: ["aha"] };
   if (kind === "intervals") {
-    const type = cardioPick("intervals", ctx)[0], rounds = Math.min([6, 8, 8][lvl] + p, 12), hard = lvl === 2 ? 1 : 1, easy = lvl === 2 ? 1 : 2;
+    const type = cardioPick("intervals", ctx)[0], rounds = Math.max(3, Math.round(Math.min([6, 8, 8][lvl] + p, 12) * vol)), hard = lvl === 2 ? 1 : 1, easy = lvl === 2 ? 1 : 2;
     return { title: "Intervals", cardio: { type, min: 10 + rounds * (hard + easy), intensity: "hard", how: `5 min easy warm-up, then intervals: ${hard} min hard, ${easy} min easy × ${rounds}, then 5 min easy` }, items: [], src: ["aha"] };
   }
   if (kind === "easyrun") return { title: "Easy run", cardio: { type: "Running / jogging", min: M, intensity: "easy", how: lvl === 0 ? "Run/walk: 2 min jog, 1 min walk, repeat — easy enough to talk" : "Easy, conversational pace" }, items: [], src: ["cdc"] };
   if (kind === "longrun") return { title: "Long run", cardio: { type: "Running / jogging", min: Math.min(M + 15, 90), intensity: "easy", how: "Slow and steady — the longest run of the week" }, items: [], src: ["aha"] };
-  if (kind === "tempo") { const t = 10 + lvl * 5 + p * 2; return { title: "Tempo run", cardio: { type: "Running / jogging", min: t + 15, intensity: "hard", how: `10 min easy, ${t} min comfortably hard, 5 min easy` }, items: [], src: ["aha"] }; }
-  if (kind === "intervalsRun") { const r = Math.min([4, 6, 8][lvl] + p, 10); return { title: "Speed intervals", cardio: { type: "Running / jogging", min: 15 + r * 4, intensity: "hard", how: `10 min easy, then ${r} × 2 min at goal mile pace with 2 min walk, 5 min easy` }, items: [], src: ["aha"] }; }
+  if (kind === "tempo") { const t = Math.round((10 + lvl * 5 + p * 2) * vol); return { title: "Tempo run", cardio: { type: "Running / jogging", min: t + 15, intensity: "hard", how: `10 min easy, ${t} min comfortably hard, 5 min easy` }, items: [], src: ["aha"] }; }
+  if (kind === "intervalsRun") { const r = Math.max(3, Math.round(Math.min([4, 6, 8][lvl] + p, 10) * vol)); return { title: "Speed intervals", cardio: { type: "Running / jogging", min: 15 + r * 4, intensity: "hard", how: `10 min easy, then ${r} × 2 min at goal mile pace with 2 min walk, 5 min easy` }, items: [], src: ["aha"] }; }
   if (kind === "rehab") return { title: "Rehab + easy movement", cardio: { ...steady(Math.min(15 + p * 5, 30), "Easy"), intensity: "easy", how: "Easy, low-impact — stop if pain rises above 3/10" },
     items: [{ key: null, name: "Your PT's exercises", text: "as prescribed", rest: "", src: null }, ...strengthItems(STRENGTH_SLOTS.mobility, 0, 0, ctx).slice(0, 2)], src: ["acsmFlex"] };
   const slots = STRENGTH_SLOTS[kind] || STRENGTH_SLOTS.full, items = strengthItems(slots, lvl, p, ctx);
@@ -2841,8 +2853,8 @@ function dayKcal(d) {
   return Math.round(k + met * restPerMin() * sm);
 }
 const mondayOf = d => { const x = parseD(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dstr(x); };
-function buildWeek(g, gs, start, p, note) {
-  const ctx = planCtx(), last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
+function buildWeek(g, gs, start, p, note, tag = {}) {
+  const ctx = { ...planCtx(), vol: tag.deload ? 0.7 : 1 }, last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
   const trainIdx = DAY_PATTERN[D], rot = ROTATION[g.id] || ROTATION.fat, walkGoal = ["fat", "heart", "recomp", "injury"].includes(g.id);
   const days = [];
   for (let i = 0; i < 7; i++) {
@@ -2851,7 +2863,8 @@ function buildWeek(g, gs, start, p, note) {
     else { const walk = walkGoal && D < 7 && i % 2 === 0 && i !== 6;
       days.push({ date, train: false, kind: walk ? "walk" : "rest", title: walk ? "Easy walk" : "Rest", cardio: walk ? { type: "Walk (outdoor)", min: 20, intensity: "easy", how: "Optional easy walk, 15–20 min" } : null, items: [], src: [], done: false, logged: null }); }
   }
-  return { start, p, note, lvl, stage: gs.stage || 1, days, built: today() };
+  const lastTrain = days.filter(d => d.train).pop(); if (tag.deload && lastTrain) lastTrain.retest = true;
+  return { start, p, note, lvl, stage: gs.stage || 1, days, built: today(), block: tag.block ?? null, wk: tag.wk ?? null, deload: !!tag.deload };
 }
 const weekStats = w => { const tr = w.days.filter(d => d.train); return { done: tr.filter(d => d.done).length, total: tr.length }; };
 function wakeAvg(from, to) { const v = db.weights.filter(w => w.type === "wake" && w.date >= from && w.date <= to).map(w => w.w); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
@@ -2866,84 +2879,227 @@ function adapt(g, prev) {
   if (share < 0.5) return { p: Math.max(0, prev.p - 1), note: `${did} — easing back a little so it's easier to get them all in.` };
   return { p: prev.p, note: weightGoal && share >= 0.75 && !dropped ? `${did}, but your weekly average didn't drop${a == null || b == null ? " (not enough weigh-ins to compare)" : ""} — repeating the same plan.` : `${did} — repeating the same plan to lock it in.` };
 }
-// Make sure this week (and, from Sunday 6 pm, next week) exist; rebuild a not-yet-started future week as last week changes
+// ---------- 4-week blocks: weeks 1–3 build, week 4 recovers (~30% less volume) and ends with a retest
+const curBlock = gs => { gs.blocks = gs.blocks || []; return gs.blocks.find(b => !b.closed) || null; };
+const weekIndex = (b, start) => Math.round((parseD(start) - parseD(b.start)) / (7 * 864e5));
+const trainPerWeek = gs => DAY_PATTERN[Math.max(1, Math.min(7, gs.days || 3))].length;
+const testAtOrBefore = (gs, date) => { const t = gs.tests.filter(x => x.date <= date); return t[t.length - 1] || gs.tests[0] || null; };
+const blockRetest = (gs, b) => gs.tests.filter(t => t.date > b.start && t.date >= addDays(b.start, 21) && t.date <= addDays(b.start, 34)).pop() || null;
+function compareTests(g, a, b) {
+  let up = 0, down = 0; const rows = [];
+  for (const k of goalTests(g)) {
+    const v0 = a && a.vals[k], v1 = b && b.vals[k]; if (v0 == null || v1 == null) { if (v1 != null) rows.push({ k, v0: null, v1, s: 0 }); continue; }
+    const t = CTESTS[k], better = t.dir === "hi" ? v1 - v0 : v0 - v1, thr = Math.max(Math.abs(v0) * 0.03, t.unit === "reps" || k === "pain" ? 1 : 0.5);
+    const s = better >= thr ? 1 : better <= -thr ? -1 : 0; if (s > 0) up++; if (s < 0) down++; rows.push({ k, v0, v1, s });
+  }
+  if (a && b && b.level > a.level) up++; if (a && b && b.level < a.level) down++;
+  return { up, down, rows, outcome: up > down ? "harder" : down > up ? "easier" : "same" };
+}
+function planNext(g, gs, b) {
+  const start = addDays(b.start, 28), r = blockRetest(gs, b), w3 = gs.weeks[addDays(b.start, 14)], lastP = w3 ? w3.p : b.base;
+  if (!r) return { n: b.n + 1, start, base: b.base, outcome: "same", note: "No retest was logged last block, so this block keeps the same difficulty." };
+  const c = compareTests(g, testAtOrBefore(gs, b.start), r);
+  const base = c.outcome === "harder" ? Math.max(b.base + 1, lastP) : c.outcome === "easier" ? Math.max(0, b.base - 1) : b.base;
+  const note = { harder: "Your retest improved — this block starts a notch harder.", same: "Your retest held steady — this block repeats the same difficulty.", easier: "Your retest slipped a little — this block eases back so you can rebuild." }[c.outcome];
+  return { n: b.n + 1, start, base, outcome: c.outcome, note };
+}
+function blockStats(g, gs, b) {
+  let done = 0, total = 0, partial = 0, skipped = 0, mins = 0, kcal = 0;
+  for (let i = 0; i < 4; i++) {
+    const w = gs.weeks[addDays(b.start, 7 * i)];
+    if (!w) { total += trainPerWeek(gs); continue; }
+    for (const d of w.days.filter(x => x.train)) {
+      total++;
+      if (d.status === "skipped") skipped++;
+      if (d.done) { done++; const f = d.status === "partial" ? 0.5 : 1; if (d.status === "partial") partial++; mins += dayMinutes(d) * f; kcal += dayKcal(d) * f; }
+    }
+  }
+  const end = addDays(b.start, 27), w0 = wakeAvg(b.start, addDays(b.start, 6)), w1 = wakeAvg(addDays(b.start, 21), end) ?? wakeAvg(addDays(b.start, 14), end);
+  return { done, total, partial, skipped, mins: Math.round(mins), kcal: Math.round(kcal), wchange: w0 != null && w1 != null ? w1 - w0 : null };
+}
+function nextBlock(g, gs, b) {
+  const nb = planNext(g, gs, b);
+  b.closed = true; b.outcome = nb.outcome; b.summary = blockStats(g, gs, b);
+  const r = blockRetest(gs, b); if (r) b.cmp = compareTests(g, testAtOrBefore(gs, b.start), r);
+  gs.blocks.push(nb); gs.showSummary = b.n;
+  return nb;
+}
+function buildBlockWeek(g, gs, b, wi) {
+  const start = addDays(b.start, 7 * wi), prev = gs.weeks[addDays(start, -7)], tag = { block: b.n, wk: wi + 1 };
+  if (wi === 0) return buildWeek(g, gs, start, b.base, b.note || "Block 1 starts at your current level.", tag);
+  if (wi === 3) return buildWeek(g, gs, start, prev ? prev.p : b.base + 2, "Recovery week — about 30% less volume so you're fresh for your retest at the end of the week.", { ...tag, deload: true });
+  if (!prev) return buildWeek(g, gs, start, b.base + wi, `Build week ${wi + 1} of 3 (projected).`, tag);
+  const a = adapt(g, prev), p = Math.max(b.base, Math.min(a.p, b.base + wi));
+  return buildWeek(g, gs, start, p, `Build week ${wi + 1} of 3. ${a.note}`, tag);
+}
+const projWeek = (g, gs, b, wi) => gs.weeks[addDays(b.start, 7 * wi)] || buildBlockWeek(g, gs, b, wi);
+// Keep this week's plan (and from Sunday 6 pm next week's) in step with blocks
 function ensureWeeks(g, gs) {
-  gs.weeks = gs.weeks || {};
+  gs.weeks = gs.weeks || {}; gs.blocks = gs.blocks || [];
+  for (const w of Object.values(gs.weeks)) for (const d of w.days) if (d.done && !d.status) d.status = "done";
   const cur = mondayOf(today());
-  if (!gs.weeks[cur]) { const prev = gs.weeks[addDays(cur, -7)], a = adapt(g, prev); gs.weeks[cur] = buildWeek(g, gs, cur, a.p, a.note); save(); }
-  const next = addDays(cur, 7), sundayNight = parseD(today()).getDay() === 0 && new Date().getHours() >= 18;
-  const nx = gs.weeks[next];
-  if (sundayNight && (!nx || !nx.days.some(d => d.done))) { const a = adapt(g, gs.weeks[cur]); gs.weeks[next] = buildWeek(g, gs, next, a.p, a.note); save(); }
-  return gs.weeks[cur];
+  let b = curBlock(gs);
+  if (!b) { const ex = gs.weeks[cur]; b = { n: 1, start: cur, base: ex ? ex.p : 0, note: "Block 1 starts at your current level." }; gs.blocks.push(b); }
+  while (cur >= addDays(b.start, 28)) b = nextBlock(g, gs, b);
+  let w = gs.weeks[cur];
+  if (w && w.built < w.start && !w.days.some(d => d.status)) w = null; // built ahead of time — refresh with the latest results
+  if (!w) { w = gs.weeks[cur] = buildBlockWeek(g, gs, b, weekIndex(b, cur)); }
+  if (w.block == null) { w.block = b.n; w.wk = weekIndex(b, cur) + 1; }
+  const next = addDays(cur, 7), sundayNight = parseD(today()).getDay() === 0 && new Date().getHours() >= 18, nx = gs.weeks[next];
+  if (sundayNight && (!nx || !nx.days.some(d => d.status))) {
+    const nwi = weekIndex(b, next);
+    gs.weeks[next] = nwi < 4 ? buildBlockWeek(g, gs, b, nwi) : buildBlockWeek(g, gs, planNext(g, gs, b), 0);
+  }
+  save();
+  return w;
 }
 function rebuildWeek(g, gs, start) {
-  const old = gs.weeks[start], w = buildWeek(g, gs, start, old ? old.p : 0, old ? old.note : "");
-  if (old) w.days.forEach((d, i) => { const o = old.days[i]; if (o && o.done) w.days[i] = o; });
+  const old = gs.weeks[start], b = gs.blocks.find(x => x.n === (old && old.block)) || curBlock(gs);
+  if (!b) return;
+  const wi = weekIndex(b, start);
+  if (wi > 3) { delete gs.weeks[start]; return; }
+  const w = buildBlockWeek(g, gs, b, wi);
+  if (old) w.days.forEach((d, i) => { const o = old.days[i]; if (o && o.status) w.days[i] = o; });
+  if (old && old.celebrated) w.celebrated = true;
   gs.weeks[start] = w;
 }
-// "Done": log the day's work to Cardio / Strength / Core with estimated calories; "Undo" removes it again
-function completeDay(gid, start, i) {
-  const gs = coach().goals[gid], d = gs && gs.weeks[start] && gs.weeks[start].days[i]; if (!d || d.done) return;
-  const logged = { cardio: [], strength: [], core: [] }, plan = `${CGOALS.find(x => x.id === gid).name} plan`;
-  if (d.cardio) { const id = uid(); db.cardio.push({ id, date: d.date, type: d.cardio.type, min: d.cardio.min, intensity: d.cardio.intensity, src: "plan", note: plan }); logged.cardio.push(id); }
-  let first = true;
-  for (const it of d.items) {
-    if (!it.key && !it.sets) continue;
-    const id = uid(), px = PEX[it.key] || {}, coreLike = !px.mv && (it.sec || ["deadbug", "birddog", "crunch", "superman", "plank", "sideplank"].includes(it.key) || !it.key);
-    if (coreLike) { db.core.push({ id, date: d.date, ex: it.name, sets: it.sets || 1, reps: it.reps || null, sec: it.sec || null, src: "plan" }); logged.core.push(id); }
-    else { db.strength.push({ id, date: d.date, area: px.mv ? "upper" : "lower", ex: it.name, sets: it.sets, reps: it.reps || 1, weight: null, min: first ? d.items.reduce((a, x) => a + itemMin(x), 0) : null, src: "plan" }); logged.strength.push(id); first = false; }
+// Done / Partial / Skipped. A future day done early is logged under today's date.
+function markDay(gid, start, i, mode, note) {
+  const g = CGOALS.find(x => x.id === gid), gs = coach().goals[gid], w = gs && gs.weeks[start], d = w && w.days[i]; if (!d || d.status) return null;
+  const when = d.date > today() ? today() : d.date, f = mode === "partial" ? 0.5 : 1, logged = { cardio: [], strength: [], core: [] }, plan = `${g.name} plan`;
+  if (mode !== "skip") {
+    if (d.cardio) { const id = uid(); db.cardio.push({ id, date: when, type: d.cardio.type, min: Math.max(1, Math.round(d.cardio.min * f)), intensity: d.cardio.intensity, src: "plan", note: plan }); logged.cardio.push(id); }
+    let first = true;
+    for (const it of d.items) {
+      if (!it.key && !it.sets) continue;
+      const id = uid(), px = PEX[it.key] || {}, sets = Math.max(1, Math.round((it.sets || 1) * f)), coreLike = !px.mv && (it.sec || ["deadbug", "birddog", "crunch", "superman", "plank", "sideplank"].includes(it.key) || !it.key);
+      if (coreLike) { db.core.push({ id, date: when, ex: it.name, sets, reps: it.reps || null, sec: it.sec || null, src: "plan" }); logged.core.push(id); }
+      else { db.strength.push({ id, date: when, area: px.mv ? "upper" : "lower", ex: it.name, sets, reps: it.reps || 1, weight: null, min: first ? Math.round(d.items.reduce((a, x) => a + itemMin(x), 0) * f) : null, src: "plan" }); logged.strength.push(id); first = false; }
+    }
   }
-  d.done = true; d.logged = logged; save();
+  d.status = mode === "skip" ? "skipped" : mode === "partial" ? "partial" : d.date > today() ? "early" : "done";
+  d.done = d.status !== "skipped"; d.note = String(note || "").trim(); d.doneOn = mode === "skip" ? null : when; d.logged = logged;
+  save();
+  return mode === "skip" ? null : celebrationFor(g, gs, w);
 }
 function undoDay(gid, start, i) {
-  const gs = coach().goals[gid], d = gs && gs.weeks[start] && gs.weeks[start].days[i]; if (!d || !d.done) return;
+  const gs = coach().goals[gid], d = gs && gs.weeks[start] && gs.weeks[start].days[i]; if (!d || !d.status) return;
   const L = d.logged || {};
   db.cardio = db.cardio.filter(x => !(L.cardio || []).includes(x.id)); db.strength = db.strength.filter(x => !(L.strength || []).includes(x.id)); db.core = db.core.filter(x => !(L.core || []).includes(x.id));
-  d.done = false; d.logged = null; save();
+  d.done = false; d.status = null; d.note = ""; d.doneOn = null; d.logged = null; save();
+}
+const completeDay = (gid, start, i) => markDay(gid, start, i, "done");
+// Celebrations: once per week, bigger once per block
+function weekTotals(w) {
+  let mins = 0, kcal = 0; for (const d of w.days.filter(x => x.done)) { const f = d.status === "partial" ? 0.5 : 1; mins += dayMinutes(d) * f; kcal += dayKcal(d) * f; }
+  return { mins: Math.round(mins), kcal: Math.round(kcal) };
+}
+function celebrationFor(g, gs, w) {
+  const st = weekStats(w); if (!st.total || st.done < st.total || w.celebrated) return null;
+  w.celebrated = true;
+  const b = gs.blocks.find(x => x.n === w.block);
+  if (w.wk === 4 && b && !b.celebrated) { b.celebrated = true; save(); return { kind: "block", g, b, s: blockStats(g, gs, b) }; }
+  save(); const t = weekTotals(w); return { kind: "week", g, w, done: st.done, total: st.total, ...t };
+}
+function showCelebration(c) {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, big = c.kind === "block";
+  const stat = (label, v, sub, d) => `<div class="rc" style="--d:${d}s"><div class="faint">${label}</div><div class="n big2">${v}</div>${sub ? `<div class="faint">${sub}</div>` : ""}</div>`;
+  const el = document.createElement("div"); el.id = "recap"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", big ? "Block complete" : "Week complete");
+  el.innerHTML = `<div class="recap-in${big ? " big" : ""}">
+    <div class="faint" style="text-transform:uppercase;letter-spacing:.12em;font-weight:700;font-size:12px">${esc(c.g.name)} · ${big ? `Block ${c.b.n}` : `Block ${c.w.block} · Week ${c.w.wk} of 4`}</div>
+    <h3 class="rc" style="--d:0s">${big ? "Block complete! 🏆" : "Week complete! 🎉"}</h3>
+    <div class="recap-grid">${big
+      ? stat("Workouts", `${c.s.done}/${c.s.total}`, "this block", .15) + stat("Minutes", c.s.mins, "of training", .3) + stat("Calories", `≈ ${c.s.kcal}`, "burned (est.)", .45) + stat("Weight", c.s.wchange == null ? "—" : `${c.s.wchange <= 0 ? "−" : "+"}${r1(Math.abs(c.s.wchange))}`, "lb, first week → last", .6)
+      : stat("Workouts", `${c.done}/${c.total}`, "all done", .15) + stat("Minutes", c.mins, "of training", .3) + stat("Calories", `≈ ${c.kcal}`, "burned (est.)", .45)}</div>
+    <p class="muted rc" style="--d:.7s">${big ? "Four weeks of showing up. Log your retest to set up the next block." : "Every planned workout this week is checked off. That's momentum."}</p>
+    <button class="btn block rc" style="--d:.8s" data-act="closeRecap">${big ? "On to the next block" : "Keep going"}</button></div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  if (!reduce) { const cs = getComputedStyle(document.documentElement), cv = k => cs.getPropertyValue(k).trim(), lime = [cv("--accent"), cv("--accent-text"), cv("--accent-press"), cv("--accent")];
+    confetti({ colors: lime, count: big ? 260 : 140, duration: big ? 4200 : 2800 }); if (big) setTimeout(() => confetti({ colors: lime, count: 200, duration: 3600, spread: .8 }), 700); }
 }
 // ---------- plan UI
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-function dayCard(gid, w, i, readOnly) {
-  const d = w.days[i], isToday = d.date === today(), future = d.date > today(), mins = dayMinutes(d);
+let planNote = null; // { g, w, i, mode } while typing a Skipped/Partial note
+const STATUS = { done: "✓ Done", early: "✓ Done early", partial: "◐ Partial", skipped: "⨯ Skipped" };
+function dayCard(gid, w, i, mode) { // mode: "edit" (current week) | "view" (past) | "locked" (future weeks)
+  const d = w.days[i], isToday = d.date === today(), mins = dayMinutes(d), edit = mode === "edit";
   const itemHtml = it => `<li>${it.key ? `<button type="button" class="link" data-act="guide" data-id="${it.key}">${esc(it.name)}</button>` : esc(it.name)} <span class="faint">— ${esc(it.text)}${it.rest ? `, rest ${esc(it.rest)}` : ""}</span>${it.src ? ` <span class="src-tag">${it.src === "acsmFlex" || it.src === "acsmRT" ? "ACSM" : it.src.toUpperCase()}</span>` : ""}</li>`;
-  return `<div class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.train ? "" : " rest"}">
+  const ref = `data-g="${gid}" data-w="${w.start}" data-i="${i}"`, noting = planNote && planNote.g === gid && planNote.w === w.start && planNote.i === i;
+  let foot = "";
+  if (d.status) foot = `<div class="day-done ${d.status}"><span>${STATUS[d.status]}${d.status === "early" && d.doneOn ? ` — logged ${fmtDay(d.doneOn).toLowerCase()}` : ""}${d.note ? ` <i class="faint">“${esc(d.note)}”</i>` : ""}</span>
+      ${edit ? `<button type="button" class="btn ghost small" data-act="planUndo" ${ref}>Undo</button>` : ""}</div>`;
+  else if (edit && noting) foot = `<div class="day-note"><label>${planNote.mode === "skip" ? "Skipping" : "Partly done"} — note (optional)<input data-plan-note placeholder="e.g. shoulder sore" maxlength="120"></label>
+      <div class="btn-row"><button type="button" class="btn small" data-act="planMark" data-m="${planNote.mode}" ${ref} style="flex:1">Save ${planNote.mode === "skip" ? "as skipped" : "as partial"}</button><button type="button" class="btn ghost small" data-act="planNoteCancel">Cancel</button></div></div>`;
+  else if (edit && (d.train || d.cardio)) foot = d.train
+    ? `<div class="btn-row" style="margin-top:10px"><button type="button" class="btn small" data-act="planMark" data-m="done" ${ref} style="flex:2">✓ Done${d.date > today() ? " early" : ""}</button>
+        <button type="button" class="btn secondary small" data-act="planNote" data-m="partial" ${ref} style="flex:1">Partial</button><button type="button" class="btn ghost small" data-act="planNote" data-m="skip" ${ref} style="flex:1">Skip</button></div>`
+    : `<button type="button" class="btn secondary small block" data-act="planMark" data-m="done" ${ref} style="margin-top:10px">✓ Walked</button>`;
+  else if (mode === "locked" && d.train) foot = `<div class="faint" style="margin-top:6px">🔒 Unlocks when this week starts</div>`;
+  else if (mode === "view" && d.train && !d.status) foot = `<div class="faint" style="margin-top:6px">Not logged</div>`;
+  return `<div class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.status === "skipped" ? " skipped" : ""}${d.train ? "" : " rest"}">
     <div class="day-top"><div><b>${DOW[i]}</b> <span class="faint">${fmtD(d.date)}</span>${isToday ? ' <span class="tag red">Today</span>' : ""}</div>
-      ${d.train || d.cardio ? `<span class="faint">${mins ? `~${mins} min` : ""}${mins ? ` · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
+      ${d.train || d.cardio ? `<span class="faint">${mins ? `~${mins} min · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
     <div class="day-title">${esc(d.title)}</div>
     ${d.cardio ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}${d.src.length ? ` <span class="src-tag">${d.src.filter(x => x === "cdc" || x === "aha").map(x => x.toUpperCase()).join("/") || ""}</span>` : ""}</div>` : ""}
     ${d.items.length ? `<ul class="day-items">${d.items.map(itemHtml).join("")}</ul>` : ""}
-    ${readOnly ? (d.train ? `<div class="faint" style="margin-top:6px">${d.done ? "✓ Done" : "Not done"}</div>` : "")
-      : d.done ? `<div class="day-done">✓ Done — logged${d.cardio ? " to Cardio" : ""}${d.items.length ? `${d.cardio ? " and" : " to"} ${d.kind === "core" || d.kind === "mobility" || d.kind === "balance" ? "Strength (core)" : "Strength"}` : ""} <button type="button" class="btn ghost small" data-act="planUndo" data-g="${gid}" data-w="${w.start}" data-i="${i}">Undo</button></div>`
-      : d.train || d.cardio ? `<button type="button" class="btn ${d.train ? "" : "secondary"} small block" data-act="planDone" data-g="${gid}" data-w="${w.start}" data-i="${i}"${future ? " disabled" : ""} style="margin-top:10px">${future ? `Available ${DOW[i]}` : d.train ? "✓ Done" : "✓ Walked"}</button>` : ""}
-  </div>`;
+    ${d.retest && mode !== "view" ? `<div class="banner" style="margin:10px 0 0">🎯 <b>Block retest</b> — redo your goal tests at the end of this week to set up the next block. <button type="button" class="btn secondary small" data-act="planRetest" data-g="${gid}" style="margin-top:8px">Open retest</button></div>` : ""}
+    ${foot}</div>`;
 }
-function weekProgress(w) {
-  const st = weekStats(w), pct = st.total ? st.done / st.total * 100 : 0;
-  return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><b>${st.done} of ${st.total} workouts done</b><span class="faint">${Math.round(pct)}%</span></div>
-    <div class="bar ${st.done >= st.total && st.total ? "good" : ""}" style="margin:6px 0 4px"><span style="width:${pct}%"></span></div>`;
+const progressBar = (label, done, total) => `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px"><b>${label}</b><span class="faint">${total ? Math.round(done / total * 100) : 0}%</span></div>
+  <div class="bar ${total && done >= total ? "good" : ""}" style="margin:6px 0 2px"><span style="width:${total ? Math.min(100, done / total * 100) : 0}%"></span></div>`;
+function weekProgress(w) { const st = weekStats(w); return progressBar(`${st.done} of ${st.total} workouts done this week`, st.done, st.total); }
+function summaryCard(g, gs, b, live) {
+  const s = live ? blockStats(g, gs, b) : b.summary || blockStats(g, gs, b), r = blockRetest(gs, b), cmp = r ? compareTests(g, testAtOrBefore(gs, b.start), r) : b.cmp;
+  const fmtV = (k, v) => v == null ? "—" : k === "mile" ? fmtMS(v) : nf(v);
+  const nb = gs.blocks.find(x => x.n === b.n + 1) || (live ? planNext(g, gs, b) : null);
+  return `<div class="card hero"><h2>Block ${b.n} summary <small>${fmtD(b.start)} – ${fmtD(addDays(b.start, 27))}</small></h2>
+    <div class="recap-grid" style="grid-template-columns:repeat(2,1fr)">
+      <div><div class="faint">Workouts</div><div class="n big2">${s.done}/${s.total}</div><div class="faint">${s.partial ? `${s.partial} partial · ` : ""}${s.skipped ? `${s.skipped} skipped` : "completed"}</div></div>
+      <div><div class="faint">Minutes</div><div class="n big2">${s.mins}</div><div class="faint">≈ ${s.kcal} cal burned</div></div>
+      <div><div class="faint">Weight change</div><div class="n big2 ${s.wchange == null ? "" : s.wchange <= 0 ? "down" : "up"}">${s.wchange == null ? "—" : `${s.wchange <= 0 ? "−" : "+"}${r1(Math.abs(s.wchange))}`}</div><div class="faint">lb, week 1 avg → week 4 avg</div></div>
+      <div><div class="faint">Retest</div><div class="n big2">${cmp ? { harder: "Improved", same: "Steady", easier: "Slipped" }[cmp.outcome] : "—"}</div><div class="faint">${cmp ? `${cmp.up} better · ${cmp.down} worse` : "not logged yet"}</div></div></div>
+    ${cmp && cmp.rows.length ? `<table style="margin-top:4px"><thead><tr><th>Test</th><th>Start</th><th>Retest</th></tr></thead><tbody>${cmp.rows.map(x => `<tr><td>${esc(CTESTS[x.k].name)}</td><td class="v">${fmtV(x.k, x.v0)}</td><td class="v ${x.s > 0 ? "down" : x.s < 0 ? "up" : ""}">${fmtV(x.k, x.v1)} ${x.s > 0 ? "▲" : x.s < 0 ? "▼" : ""}</td></tr>`).join("")}</tbody></table>` : ""}
+    ${nb ? `<p class="muted" style="margin:10px 0 0">${live ? "Next block (starts Monday): " : ""}${esc(nb.note)}</p>` : ""}
+    ${!live ? `<button class="btn ghost small" data-act="planSummaryHide" data-g="${g.id}" style="margin-top:10px">Hide summary</button>` : ""}</div>`;
 }
 function planCards(g, gs) {
-  const w = ensureWeeks(g, gs), next = gs.weeks[addDays(w.start, 7)];
+  const w = ensureWeeks(g, gs), b = gs.blocks.find(x => x.n === w.block) || curBlock(gs), next = gs.weeks[addDays(w.start, 7)];
   const past = Object.keys(gs.weeks).filter(k => k < w.start).sort().reverse();
   const used = [...new Set(w.days.flatMap(d => [...d.src, ...d.items.map(i => i.src)]).filter(Boolean))];
-  const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment";
-  return `<div class="card hero"><h2>This week's plan <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
+  const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment", bs = blockStats(g, gs, b);
+  const lastClosed = gs.showSummary ? gs.blocks.find(x => x.n === gs.showSummary && x.closed) : null, retested = w.wk === 4 && blockRetest(gs, b);
+  const weekLabel = i => i === 3 ? "Recovery + retest" : `Build ${i + 1}`;
+  return `${lastClosed ? summaryCard(g, gs, lastClosed, false) : ""}
+    <div class="card hero"><h2>Block ${b.n} · Week ${w.wk} of 4 <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
+      ${w.deload ? `<span class="tag red">Recovery week · ~30% lighter</span>` : ""}
       ${weekProgress(w)}
-      <p class="faint" style="margin:6px 0 0">${esc(w.note)} ${LEVELS[w.lvl]} level · step ${w.stage} · ${gs.days} day${gs.days === 1 ? "" : "s"}/week · ${esc(equipTxt)}${lockMode() !== "off" ? ` · ${lockMode() === "push" ? "no pushing/overhead" : "no upper body"}` : ""}${Object.keys(ctx.limits).filter(k => ctx.limits[k]).length ? " · " + Object.keys(ctx.limits).filter(k => ctx.limits[k]).map(k => k).join(", ") + " limits" : ""}.</p>
-      <div class="days">${w.days.map((_, i) => dayCard(g.id, w, i)).join("")}</div>
-      <div class="btn-row" style="margin-top:12px"><button class="btn secondary small" data-act="planPdf" data-g="${g.id}" data-scope="week" style="flex:1">⬇ Download this week (PDF)</button>
-        <button class="btn ghost small" data-act="planPdf" data-g="${g.id}" data-scope="program" style="flex:1">⬇ 4-week program (PDF)</button></div>
+      ${progressBar(`${bs.done} of ${bs.total} workouts done this block`, bs.done, bs.total)}
+      <p class="faint" style="margin:8px 0 0">${esc(w.note)} ${LEVELS[w.lvl]} level · step ${w.stage} · ${gs.days} day${gs.days === 1 ? "" : "s"}/week · ${esc(equipTxt)}${lockMode() !== "off" ? ` · ${lockMode() === "push" ? "no pushing/overhead" : "no upper body"}` : ""}.</p>
+      <details id="blockov-${g.id}" class="block-ov"><summary>Block overview — all 4 weeks</summary>
+        ${[0, 1, 2, 3].map(i => { const pw = projWeek(g, gs, b, i), st = weekStats(pw), isCur = pw.start === w.start, fut = pw.start > w.start;
+          return `<details id="bw-${g.id}-${b.n}-${i}" class="bw${isCur ? " cur" : ""}"><summary><span><b>Week ${i + 1}</b> · ${weekLabel(i)} <span class="faint">${fmtD(pw.start)}–${fmtD(addDays(pw.start, 6))}</span></span>
+            <span class="faint">${fut ? `${st.total} planned` : `${st.done}/${st.total} done`}${isCur ? " · now" : ""}</span></summary>
+            <p class="faint" style="margin:0 0 6px">${fut ? "Projected — it adjusts to how the weeks before it go. " : ""}${esc(pw.note)}</p>
+            ${isCur ? `<p class="faint" style="margin:0">This is the current week — check workouts off in the list below.</p>` : `<div class="days">${pw.days.map((_, j) => dayCard(g.id, pw, j, fut ? "locked" : "view")).join("")}</div>`}</details>`; }).join("")}
+      </details>
+      <div class="days">${w.days.map((_, i) => dayCard(g.id, w, i, "edit")).join("")}</div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn secondary small" data-act="planPdf" data-g="${g.id}" data-scope="week" style="flex:1">⬇ This week (PDF)</button>
+        <button class="btn ghost small" data-act="planPdf" data-g="${g.id}" data-scope="program" style="flex:1">⬇ Whole block (PDF)</button></div>
     </div>
-    ${next ? `<div class="card"><h2>Next week's plan <small>${fmtD(next.start)} – ${fmtD(addDays(next.start, 6))}</small></h2>
-      <p class="muted" style="margin-top:0">${esc(next.note)}</p><div class="days">${next.days.map((_, i) => dayCard(g.id, next, i, true)).join("")}</div></div>` : ""}
+    ${retested ? summaryCard(g, gs, b, true) : ""}
+    ${next ? `<div class="card"><h2>Next week's plan <small>${next.block !== w.block ? `Block ${next.block} · ` : ""}Week ${next.wk} of 4</small></h2>
+      <p class="muted" style="margin-top:0">${esc(next.note)}</p><div class="days">${next.days.map((_, i) => dayCard(g.id, next, i, "locked")).join("")}</div></div>` : ""}
     <div class="card"><h2>Past weeks <small>${past.length}</small></h2>
       ${past.length ? past.map(k => { const pw = gs.weeks[k], st = weekStats(pw);
-        return `<details id="pw-${g.id}-${k}" style="margin-top:8px"><summary>${fmtD(k)} – ${fmtD(addDays(k, 6))} · ${st.done}/${st.total} ${st.total && st.done >= st.total ? "✓ Finished" : st.done / (st.total || 1) >= 0.75 ? "· mostly done" : ""}</summary>
-          <p class="faint" style="margin-top:0">${esc(pw.note)}</p><div class="days">${pw.days.map((_, i) => dayCard(g.id, pw, i, true)).join("")}</div></details>`; }).join("")
-        : `<p class="faint" style="margin:0">Finished weeks will show up here.</p>`}</div>
+        return `<details id="pw-${g.id}-${k}" style="margin-top:8px"><summary>${pw.block ? `B${pw.block} W${pw.wk} · ` : ""}${fmtD(k)} – ${fmtD(addDays(k, 6))} · ${st.done}/${st.total} ${st.total && st.done >= st.total ? "✓ Finished" : ""}</summary>
+          <p class="faint" style="margin-top:0">${esc(pw.note)}</p><div class="days">${pw.days.map((_, i) => dayCard(g.id, pw, i, "view")).join("")}</div></details>`; }).join("")
+        : `<p class="faint" style="margin:0">Finished weeks will show up here.</p>`}
+      ${gs.blocks.filter(x => x.closed).length ? `<h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 4px">Past blocks</h4>
+        ${gs.blocks.filter(x => x.closed).reverse().map(x => `<details id="pb-${g.id}-${x.n}" style="margin-top:8px"><summary>Block ${x.n} · ${x.summary ? `${x.summary.done}/${x.summary.total} workouts` : ""} · ${{ harder: "improved", same: "held steady", easier: "slipped" }[x.outcome] || ""}</summary>${summaryCard(g, gs, x, false).replace('<div class="card hero">', '<div>').replace(/<button class="btn ghost small" data-act="planSummaryHide"[^>]*>Hide summary<\/button>/, "")}</details>`).join("")}` : ""}</div>
     <div class="card"><h2>Guidelines behind this plan</h2>
       <ul class="src" style="padding-left:18px;margin:0">${used.map(k => `<li><a href="${PLAN_SRC[k][1]}" target="_blank" rel="noopener">${esc(PLAN_SRC[k][0])}</a></li>`).join("")}</ul>
-      <p class="faint" style="margin-bottom:0">Set counts, rest times, interval patterns and exercise choices are the app's coaching defaults built around these guidelines. Weekly changes follow your results: most workouts done${["fat", "recomp", "heart"].includes(g.id) ? " and a lower weekly weight average" : ""} → step up slightly; fewer than half → ease back; otherwise repeat.</p></div>`;
+      <p class="faint" style="margin-bottom:0">Plans run in 4-week blocks: weeks 1–3 build gradually, week 4 drops about 30% of the volume and ends with a retest. Set counts, rest times, interval patterns, the recovery-week cut and exercise choices are the app's coaching defaults built around these guidelines. Within a block: most workouts done${["fat", "recomp", "heart"].includes(g.id) ? " and a lower weekly weight average" : ""} → step up slightly; fewer than half → ease back; otherwise repeat. After the retest: improved → next block harder; steady → same; slipped → easier.</p></div>`;
 }
 
 // ---------- one-page PDF with checkboxes (no library: plain PDF 1.4 with built-in Helvetica)
@@ -2965,7 +3121,9 @@ function pdfWeekPage(g, gs, w, label) {
   const lines = []; // [{type, text, size, bold, indent, box, checked}]
   const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment";
   w.days.forEach((d, i) => {
-    lines.push({ text: `${DOW[i]} ${fmtD(d.date)} - ${d.title}${d.train || d.cardio ? ` (~${dayMinutes(d)} min, ~${dayKcal(d)} cal)` : ""}`, bold: true, box: d.train, checked: d.done, gap: 7 });
+    lines.push({ text: `${DOW[i]} ${fmtD(d.date)} - ${d.title}${d.train || d.cardio ? ` (~${dayMinutes(d)} min, ~${dayKcal(d)} cal)` : ""}${d.status ? `  [${STATUS[d.status].replace(/^\W+ /, "")}${d.status === "early" && d.doneOn ? ` ${fmtD(d.doneOn)}` : ""}]` : ""}`, bold: true, box: d.train, checked: d.done, gap: 7 });
+    if (d.note) lines.push({ text: `Note: ${d.note}`, indent: 1 });
+    if (d.retest) lines.push({ text: "Block retest - redo your goal tests at the end of this week", indent: 1, box: true, checked: false });
     if (d.cardio) lines.push({ text: `${actFor(d.cardio.type).name}, ${d.cardio.min} min: ${d.cardio.how}`, indent: 1, box: !d.train, checked: d.done });
     d.items.forEach(it => lines.push({ text: `${it.name} - ${it.text}${it.rest ? `, rest ${it.rest}` : ""}`, indent: 1, box: true, checked: d.done }));
   });
@@ -2977,7 +3135,7 @@ function pdfWeekPage(g, gs, w, label) {
     const acc = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map(v => (+v / 255).toFixed(3)).join(" ");
     const header = [`${acc} rg ${M} ${top - 22} 26 26 re f`, `0.06 0.07 0.08 rg BT /F2 18 Tf ${M + 6} ${top - 16} Td (M) Tj ET`, `0 0 0 rg BT /F2 16 Tf ${M + 36} ${top - 10} Td (${pdfTxt(`Momentum - ${g.name} plan`)}) Tj ET`,
       `0.35 0.35 0.35 rg BT /F1 9 Tf ${M + 36} ${top - 23} Td (${pdfTxt(`${label} - ${fmtD(w.start)} to ${fmtD(addDays(w.start, 6))}, ${parseD(w.start).getFullYear()} - ${LEVELS[w.lvl]} level - ${gs.days} days/week - ${equipTxt}${lockMode() === "push" ? " - no pushing/overhead" : lockMode() === "all" ? " - no upper body" : ""}`)}) Tj ET`,
-      `BT /F1 9 Tf ${M} ${top - 42} Td (${pdfTxt(`Check off each workout as you finish it.  ${weekStats(w).done} of ${weekStats(w).total} done so far.`)}) Tj ET`, "0 0 0 rg 0 0 0 RG 0.7 w"];
+      `BT /F1 9 Tf ${M} ${top - 42} Td (${pdfTxt(`${w.block ? `Block ${w.block} - Week ${w.wk} of 4${w.deload ? " (recovery week, ~30% lighter)" : ""} - ` : ""}This week: ${weekStats(w).done} of ${weekStats(w).total} done${w.block && gs.blocks ? ` - Block: ${(() => { const bb = gs.blocks.find(x => x.n === w.block); if (!bb) return ""; const st = blockStats(g, gs, bb); return `${st.done} of ${st.total} done`; })()}` : ""}. Check off each workout as you finish it.`)}) Tj ET`, "0 0 0 rg 0 0 0 RG 0.7 w"];
     ops.push(...header);
     let fits = true;
     for (const L of lines) {
@@ -2999,10 +3157,11 @@ function pdfWeekPage(g, gs, w, label) {
   return "";
 }
 function planPdf(gid, scope) {
-  const g = CGOALS.find(x => x.id === gid), gs = coach().goals[gid], w = ensureWeeks(g, gs), pages = [pdfWeekPage(g, gs, w, scope === "program" ? "Week 1 of 4" : "This week")];
-  if (scope === "program") for (let k = 1; k < 4; k++) { const pw = buildWeek(g, gs, addDays(w.start, 7 * k), w.p + k, "Projected — adjusts to how your weeks go."); pages.push(pdfWeekPage(g, gs, pw, `Week ${k + 1} of 4 (projected)`)); }
+  const g = CGOALS.find(x => x.id === gid), gs = coach().goals[gid], w = ensureWeeks(g, gs), b = gs.blocks.find(x => x.n === w.block) || curBlock(gs);
+  const pages = scope === "program" ? [0, 1, 2, 3].map(i => { const pw = projWeek(g, gs, b, i); return pdfWeekPage(g, gs, pw, `Block ${b.n} - week ${i + 1} of 4${pw.start > w.start ? " (projected)" : ""}`); })
+    : [pdfWeekPage(g, gs, w, "This week")];
   const pdf = pdfDoc(pages), bytes = new Uint8Array(pdf.length); for (let i = 0; i < pdf.length; i++) bytes[i] = pdf.charCodeAt(i) & 255;
-  return { bytes, name: `momentum-${g.id}-${scope === "program" ? "4-week-program" : "week"}-${w.start}.pdf` };
+  return { bytes, name: `momentum-${g.id}-${scope === "program" ? `block-${b.n}` : "week"}-${w.start}.pdf` };
 }
 async function sharePdf(gid, scope) {
   const { bytes, name } = planPdf(gid, scope), file = new File([bytes], name, { type: "application/pdf" });
@@ -3065,18 +3224,18 @@ function showRecap(fri) {
   });
   if (r.good) setTimeout(confetti, 400);
 }
-function confetti() {
+function confetti(opt = {}) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const c = document.createElement("canvas"), ctx = c.getContext("2d"), W = c.width = innerWidth, H = c.height = innerHeight;
   c.className = "confetti"; document.body.appendChild(c);
   const cs = getComputedStyle(document.documentElement), cv = k => cs.getPropertyValue(k).trim();
-  const cols = [cv("--accent"), cv("--ink"), cv("--good"), cv("--warn"), cv("--accent")];
-  const P = [...Array(140)].map(() => ({ x: W / 2 + (Math.random() - .5) * W * .3, y: H * .35, vx: (Math.random() - .5) * 12, vy: -Math.random() * 14 - 4,
+  const cols = opt.colors || [cv("--accent"), cv("--ink"), cv("--good"), cv("--warn"), cv("--accent")], spread = opt.spread || .3;
+  const P = [...Array(opt.count || 140)].map(() => ({ x: W / 2 + (Math.random() - .5) * W * spread, y: H * .35, vx: (Math.random() - .5) * 12, vy: -Math.random() * 14 - 4,
     s: 5 + Math.random() * 6, r: Math.random() * 6, vr: (Math.random() - .5) * .3, c: cols[Math.floor(Math.random() * cols.length)] }));
   const t0 = performance.now();
   const frame = now => { ctx.clearRect(0, 0, W, H);
     for (const p of P) { p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore(); }
-    if (now - t0 < 2800) requestAnimationFrame(frame); else c.remove(); };
+    if (now - t0 < (opt.duration || 2800)) requestAnimationFrame(frame); else c.remove(); };
   requestAnimationFrame(frame);
 }
 
@@ -3571,6 +3730,7 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("toggle", e => { if (e.target.id === "mealForm") mealFormOpen = e.target.open; }, true);
 document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.matches && e.target.matches("[data-plan-note]")) { e.preventDefault(); const b = e.target.closest(".day-note").querySelector("[data-act=planMark]"); if (b) b.click(); return; }
   if (e.key === "Enter" && e.target.dataset && e.target.dataset.qa === "desc") { e.preventDefault(); e.target.blur(); return; }
   if (e.key === "Enter" && e.target.dataset && e.target.dataset.draft === "q") { e.preventDefault(); $("[data-act=offSearch]").click(); }
 });
@@ -3629,8 +3789,19 @@ document.addEventListener("click", e => {
   if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") { coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render(); window.scrollTo(0, 0); return; }
-  if (act === "planDone") { completeDay(el.dataset.g, el.dataset.w, +el.dataset.i); const d = coach().goals[el.dataset.g].weeks[el.dataset.w].days[+el.dataset.i]; toast(`Logged ${d.title.toLowerCase()} — ≈ ${dayKcal(d)} cal`); render(); return; }
-  if (act === "planUndo") { undoDay(el.dataset.g, el.dataset.w, +el.dataset.i); toast("Removed from your log"); render(); return; }
+  if (act === "planMark") {
+    const g = el.dataset.g, w = el.dataset.w, i = +el.dataset.i, m = el.dataset.m, ni = el.closest(".day-card") && el.closest(".day-card").querySelector("[data-plan-note]"), note = ni ? ni.value : "";
+    const d = coach().goals[g].weeks[w].days[i], early = d.date > today();
+    const cel = markDay(g, w, i, m, m === "done" ? "" : note); planNote = null; render();
+    toast(m === "skip" ? "Marked skipped" : m === "partial" ? `Partial logged${early ? " for today" : ""} — about half` : early ? `Done early — logged to today, ≈ ${dayKcal(d)} cal` : `Logged ${d.title.toLowerCase()} — ≈ ${dayKcal(d)} cal`);
+    if (cel) setTimeout(() => showCelebration(cel), 350);
+    return;
+  }
+  if (act === "planNote") { planNote = { g: el.dataset.g, w: el.dataset.w, i: +el.dataset.i, mode: el.dataset.m }; render(); const n = $("[data-plan-note]"); if (n) n.focus(); return; }
+  if (act === "planNoteCancel") { planNote = null; render(); return; }
+  if (act === "planUndo") { undoDay(el.dataset.g, el.dataset.w, +el.dataset.i); planNote = null; toast("Undone — removed from your log"); render(); return; }
+  if (act === "planRetest") { const d = document.getElementById("retest-" + el.dataset.g); if (d) { d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } return; }
+  if (act === "planSummaryHide") { const gs = coach().goals[el.dataset.g]; if (gs) { gs.showSummary = null; save(); } render(); return; }
   if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "scanStart") { startScan(); return; }
