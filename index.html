@@ -244,6 +244,17 @@ nav.tabs button.on svg { color: var(--accent); }
 .chip { border: 0; border-radius: 999px; background: var(--card-2); color: var(--ink); padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
 .chip.on { background: var(--accent); color: #fff; }
 .pick-list { display: grid; gap: 8px; }
+.days { display: grid; gap: 10px; margin-top: 14px; }
+.day-card { background: var(--card-2); border-radius: 14px; padding: 12px 14px; border: 1.5px solid transparent; }
+.day-card.today { border-color: var(--accent); background: #1f1416; }
+.day-card.rest { opacity: .78; } .day-card.done { box-shadow: inset 4px 0 0 var(--good); }
+.day-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 14px; }
+.day-title { font-family: var(--num); font-size: 22px; font-weight: 800; text-transform: uppercase; margin: 2px 0 4px; }
+.day-cardio { font-size: 15px; margin: 4px 0; } .day-items { margin: 6px 0 0; padding-left: 18px; font-size: 15px; } .day-items li { margin: 4px 0; }
+.day-done { color: var(--good); font-weight: 700; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.src-tag { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; vertical-align: 1px; }
+button.link { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; cursor: pointer; }
+label.chip.chk { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; } label.chip.chk input { width: 18px; height: 18px; margin: 0; }
 .qa-sel { display: flex; align-items: center; gap: 10px; background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin: 12px 0 10px; }
 .slot-head { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 0; }
 .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; padding: 0; cursor: pointer; }
@@ -318,7 +329,7 @@ canvas.confetti { position: fixed; inset: 0; z-index: 60; pointer-events: none; 
 const KEY = "healthTracker.v1";
 const AREAS = { core: "Core", lower: "Lower body", upper: "Upper body" };
 const DEFAULTS = {
-  v: 5,
+  v: 6,
   settings: {
     name: "", setupDone: false, heightIn: null, startWeight: null, startDate: null, goals: [],
     weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
@@ -330,7 +341,7 @@ const DEFAULTS = {
     },
     // exercise goals: {id, area, ex, sets, reps, sec, weight}
     liftGoals: [],
-    shouldersCleared: true, clearedDate: null, lastBackup: null, lastSync: null
+    shouldersCleared: true, lockMode: "all", equip: [], limits: {}, clearedDate: null, lastBackup: null, lastSync: null
   },
   weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: [],
   comp: [],    // body fat % / BMI entered by hand: {id, date, bf, bmi, note}
@@ -424,6 +435,10 @@ function migrate(db, hadSaved) {
   if (db.v < 5) {
     // data saved by an earlier version already has a profile, so skip first-time setup
     if (hadSaved) db.settings.setupDone = true;
+  }
+  if (db.v < 6 && hadSaved && db.settings.shouldersCleared === false && !db.settings.lockModeSet) {
+    // shoulder rule clarified: no pushing or overhead work; pulling and core are fine
+    db.settings.lockMode = "push"; db.settings.lockModeSet = true;
   }
   if (db.v < 4) {
     if (!db.foods.length) db.foods = FOOD_TABLE.map(([name, serving, amt, unit, cal, protein, aliases]) => ({ id: uid(), name, serving, amt, unit, cal, protein, aliases, src: "table" }));
@@ -962,7 +977,8 @@ const ORDER = { bad: 0, warn: 1, none: 2, good: 3 };
 const CARDIO_GROUPS = ["Walking & running", "Bikes & machines", "Water", "Cardio classes"];
 const ACTS = [
   { name: "Walk (outdoor)", g: 0, mode: "walk", met: [3.0, 3.8, 4.8] },           // 17170, 17190, 17200
-  { name: "Incline walk", g: 0, mode: "incline", met: [5.3, 5.3, 8.0] },          // *uphill 1–5% / 6–15% grade
+  { name: "Incline walk", g: 0, mode: "incline", met: [5.3, 5.3, 8.0] },
+  { name: "Indoor walk (walking pad)", g: 0, mode: "walk", met: [3.0, 3.8, 4.8] },     // walking by speed, as outdoors          // *uphill 1–5% / 6–15% grade
   { name: "Running / jogging", g: 0, mode: "run", met: [7.5, 9.3, 11.0], alias: ["Running"] }, // 12020, 12050, 12070
   { name: "Hiking", g: 0, mode: "fixed", met: [6.0, 6.0, 6.0] },                  // *17080 cross country
   { name: "Stairs", g: 0, mode: "fixed", met: [4.0, 8.8, 8.8] },                  // *17133 slow, 17134 fast
@@ -971,7 +987,7 @@ const ACTS = [
   { name: "Peloton / indoor bike", g: 1, mode: "bike", met: [5.0, 6.8, 10.3], alias: ["Peloton ride", "Peloton / bike"] }, // 60 W, general, 151–199 W
   { name: "Outdoor cycling", g: 1, mode: "bike", met: [6.8, 8.0, 10.0] },         // 01020, 01030, 01040
   { name: "Elliptical", g: 1, mode: "fixed", met: [5.0, 5.0, 5.0] },              // *moderate effort
-  { name: "Rowing", g: 1, mode: "fixed", upper: 1, met: [5.0, 5.0, 7.3] },        // 02071, 02070
+  { name: "Rowing", g: 1, mode: "fixed", upper: 1, mv: "pull", met: [5.0, 5.0, 7.3] },        // 02071, 02070
   { name: "Swimming", g: 2, mode: "fixed", upper: 1, met: [5.8, 5.8, 9.8] },      // *freestyle slow / fast
   { name: "HIIT", g: 3, mode: "fixed", met: [5.0, 7.5, 11.0] },                   // circuit moderate, circuit vigorous, 02214 HIIT vigorous
   { name: "Bodyweight circuit", g: 3, mode: "fixed", met: [3.5, 6.0, 7.5] },      // circuit light, body-weight circuit, vigorous
@@ -983,13 +999,14 @@ const ACTS = [
   { name: "Mountain climbers", g: 3, mode: "fixed", upper: 1, met: [3.8, 7.5, 11.0] },
   { name: "Custom", g: 3, mode: "fixed", met: [3.0, 4.5, 7.0], alias: ["Other cardio"] } // general light / moderate / vigorous bands
 ];
+const actLocked = a => !!a.upper && blocks(a.mv || "push");
 const actFor = type => ACTS.find(a => a.name === type || (a.alias || []).includes(type)) || ACTS[ACTS.length - 1];
 const CARDIO_TYPES = ACTS.map(a => a.name);
 const INTENSITY = { easy: "Easy", moderate: "Moderate", hard: "Hard" };
 function cardioSelect(v) {
-  const locked = !db.settings.shouldersCleared, cur = v ? actFor(v).name : "Walk (outdoor)";
-  return `<label>Activity<select name="type">${CARDIO_GROUPS.map((g, gi) => `<optgroup label="${g}">${ACTS.filter(a => a.g === gi).map(a =>
-    `<option value="${esc(a.name)}"${a.name === cur ? " selected" : ""}${a.upper && locked && a.name !== cur ? " disabled" : ""}>${esc(a.name)}${a.upper && locked ? " 🔒" : ""}</option>`).join("")}</optgroup>`).join("")}</select></label>`;
+  const cur = v ? actFor(v).name : "Walk (outdoor)";
+  return `<label>Activity<select name="type">${CARDIO_GROUPS.map((g, gi) => `<optgroup label="${g}">${ACTS.filter(a => a.g === gi).map(a => { const lk = actLocked(a);
+    return `<option value="${esc(a.name)}"${a.name === cur ? " selected" : ""}${lk && a.name !== cur ? " disabled" : ""}>${esc(a.name)}${lk ? " 🔒" : ""}</option>`; }).join("")}</optgroup>`).join("")}</select></label>`;
 }
 const exKey = s => String(s || "").trim().toLowerCase();
 const nf = n => String(Math.round(n * 10) / 10);
@@ -1000,9 +1017,17 @@ function rememberEx(area, name) {
   const l = db.settings.exercises[area];
   if (l && name && !l.some(x => exKey(x) === exKey(name))) l.push(name);
 }
+// Upper-body lock levels: "off" (cleared), "push" (no pushing or overhead — pulling OK), "all" (no upper-body work)
+const lockMode = () => db.settings.shouldersCleared ? "off" : db.settings.lockMode === "push" ? "push" : "all";
+const blocks = mv => { const m = lockMode(); return m === "all" ? mv === "push" || mv === "pull" : m === "push" && mv === "push"; };
+const PULL_RE = /row|pull|chin|curl|hang|shrug|rear delt|reverse fly/i;
+const exMove = (name, area) => area === "upper" || isUpperEx(name) ? (PULL_RE.test(name || "") ? "pull" : "push") : null;
+const LOCK_LABEL = { off: "Off — no upper-body limits", push: "No pushing or overhead (pulling OK)", all: "All upper-body work locked" };
 function lockCheck(e) {
-  if (db.settings.shouldersCleared || (e.area !== "upper" && !isUpperEx(e.ex))) return;
-  return `${e.area === "upper" ? "Upper-body exercises are" : `"${e.ex}" is an upper-body exercise and is`} locked until your PT or doctor clears you. You can unlock them on the Fitness tab or in Settings.`;
+  const mv = exMove(e.ex, e.area);
+  if (!mv || !blocks(mv)) return;
+  if (lockMode() === "push") return `"${e.ex || "That exercise"}" is a pushing or overhead movement, which is locked for your shoulder. Pulling and core work are fine.`;
+  return `${e.area === "upper" ? "Upper-body exercises are" : `"${e.ex}" is an upper-body exercise and is`} locked until your PT or doctor clears you. You can change the lock in Settings.`;
 }
 const F = (name, label, kind, o = {}) => ({ name, label, kind, ...o });
 const D = (label = "Date", o = {}) => F("date", label, "date", { req: 1, maxToday: 1, ...o });
@@ -1057,7 +1082,7 @@ const SPEC = {
     check(e) {
       const a = actFor(e.type);
       if (!(e.min >= 1)) return "Enter how many minutes.";
-      if (a.upper && !db.settings.shouldersCleared) return `${a.name} uses your upper body, so it's locked until your PT or doctor clears you.`;
+      if (actLocked(a)) return `${a.name} ${a.mv === "pull" ? "uses your upper body" : "involves pushing or overhead work"}, so it's locked until your PT or doctor clears you.`;
       if (e.hr != null && (e.hr < 40 || e.hr > 220)) return "Average heart rate should be between 40 and 220 bpm.";
       if (!["walk", "incline", "run", "bike"].includes(a.mode)) e.speed = null;
       if (a.mode !== "incline" && !(a.mode === "run" && e.where === "treadmill")) e.incline = null;
@@ -1112,7 +1137,7 @@ function fieldHtml(fd, v, vals) {
     return `<label>${label}<select name="${name}">${opts.map(([k, l]) => `<option value="${esc(k)}"${k === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   }
   if (kind === "area") {
-    const locked = !db.settings.shouldersCleared;
+    const locked = lockMode() === "all";
     return `<label>${label}<select name="area">${(fd.core ? ["core", "lower", "upper"] : ["lower", "upper"]).map(a =>
       `<option value="${a}"${a === v ? " selected" : ""}${a === "upper" && locked && v !== "upper" ? " disabled" : ""}>${AREAS[a]}${a === "upper" && locked ? " 🔒 (needs clearance)" : ""}</option>`).join("")}</select></label>`;
   }
@@ -1165,13 +1190,13 @@ function editSheet() {
 }
 const rowBtns = (k, id) => `<button class="x" data-act="edit" data-k="${k}" data-id="${esc(id)}" aria-label="Edit">✎</button><button class="x" data-act="del" data-k="${k}" data-id="${esc(id)}" aria-label="Delete">×</button>`;
 // upper-body items stay read-only until the shoulders are cleared
-const btnsFor = (k, x) => !db.settings.shouldersCleared && x.area === "upper" ? '<span class="tag">🔒</span>' : rowBtns(k, x.id);
+const btnsFor = (k, x) => x.area === "upper" && blocks(exMove(x.ex, "upper")) ? '<span class="tag">🔒</span>' : rowBtns(k, x.id);
 const moreList = (items, n, row) => !items.length ? "" : `<ul class="list">${items.slice(0, n).map(row).join("")}</ul>
   ${items.length > n ? `<details style="margin-top:6px"><summary>Show ${items.length - n} more</summary><ul class="list">${items.slice(n).map(row).join("")}</ul></details>` : ""}`;
 const newestFirst = arr => [...arr].reverse().sort((a, b) => b.date.localeCompare(a.date));
 function renderDatalists() {
-  const s = db.settings, locked = !s.shouldersCleared;
-  $("#dl").innerHTML = Object.keys(AREAS).map(a => `<datalist id="dl-${a}">${(a === "upper" && locked ? [] : s.exercises[a]).map(x => `<option value="${esc(x)}">`).join("")}</datalist>`).join("");
+  const s = db.settings, up = s.exercises.upper.filter(n => !blocks(PULL_RE.test(n) ? "pull" : "push"));
+  $("#dl").innerHTML = Object.keys(AREAS).map(a => `<datalist id="dl-${a}">${(a === "upper" ? up : s.exercises[a]).map(x => `<option value="${esc(x)}">`).join("")}</datalist>`).join("");
 }
 
 // =====================================================================
@@ -1276,10 +1301,11 @@ function viewSetup() {
       <label>Weigh-in day<select name="weighDay">${DAYS.map((d, i) => `<option value="${i}"${i === weighDay() ? " selected" : ""}>${d}</option>`).join("")}</select></label>
       <p class="faint" style="margin-top:-4px">Your weeks end on this day, so weekly averages and your weekly recap line up with your weigh-in.</p>
       <label>Goal weights (lb, comma separated — the lowest is your final goal)<input name="goals" value="${esc((s.goals || []).join(", "))}" placeholder="e.g. 200, 190, 180" required inputmode="decimal"></label>
-      <p class="muted" style="margin:14px 0 6px">Do you have an injury that should lock upper-body exercises (push-ups, presses, rows) until a PT or doctor clears you?</p>
-      <div class="seg" role="radiogroup">
-        <label class="check" style="justify-content:center;margin:0"><input type="radio" name="injury" value="yes" ${s.setupDone && !s.shouldersCleared ? "checked" : ""} required style="width:20px;height:20px">Yes, lock them</label>
-        <label class="check" style="justify-content:center;margin:0"><input type="radio" name="injury" value="no" ${s.setupDone && s.shouldersCleared ? "checked" : ""} style="width:20px;height:20px">No</label>
+      <p class="muted" style="margin:14px 0 6px">Do you have an injury (like a shoulder) that should limit upper-body exercises until a PT or doctor clears you?</p>
+      <div class="pick-list" role="radiogroup">
+        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="push" required style="width:20px;height:20px">Yes — no pushing or overhead (pulling OK)</label>
+        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="all" style="width:20px;height:20px">Yes — lock all upper-body work</label>
+        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="no" style="width:20px;height:20px">No</label>
       </div>
       <button class="btn block" style="margin-top:8px">Start tracking</button>
     </form></div>
@@ -2164,12 +2190,12 @@ function fitCardio() {
 // Step-by-step "Log activity" sheet: group → activity → form
 let logCardio = null; // { step: "group" | "act" | "form", g, type }
 const topActivities = () => {
-  const n = {}, locked = !db.settings.shouldersCleared;
-  for (const c of db.cardio) { const a = actFor(c.type); if (!(a.upper && locked)) n[a.name] = (n[a.name] || 0) + 1; }
+  const n = {};
+  for (const c of db.cardio) { const a = actFor(c.type); if (!actLocked(a)) n[a.name] = (n[a.name] || 0) + 1; }
   return Object.keys(n).sort((x, y) => n[y] - n[x]).slice(0, 3);
 };
 function logCardioSheet() {
-  const L = logCardio, locked = !db.settings.shouldersCleared;
+  const L = logCardio;
   const top = `<div class="grab"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
     ${L.step === "group" ? "<span></span>" : `<button class="btn ghost small" data-act="logStep" data-step="${L.step === "form" && L.g != null ? "act" : "group"}">‹ Back</button>`}
     <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>`;
@@ -2182,10 +2208,10 @@ function logCardioSheet() {
       <div class="pick-list">${CARDIO_GROUPS.map((g, gi) => `<button class="pick" data-act="logGroup" data-g="${gi}">${g}<small>${ACTS.filter(a => a.g === gi).map(a => a.name).slice(0, 3).join(", ")}${ACTS.filter(a => a.g === gi).length > 3 ? "…" : ""}</small><span>›</span></button>`).join("")}</div>`;
   }
   if (L.step === "act") {
-    const acts = ACTS.filter(a => a.g === L.g), open = acts.filter(a => !(a.upper && locked)), shut = acts.filter(a => a.upper && locked);
+    const acts = ACTS.filter(a => a.g === L.g), open = acts.filter(a => !actLocked(a)), shut = acts.filter(actLocked);
     return top + `<h3 style="margin-top:6px">${CARDIO_GROUPS[L.g]}</h3>
       <div class="pick-list" style="margin-top:12px">${open.map(a => `<button class="pick" data-act="logAct" data-v="${esc(a.name)}">${esc(a.name)}<span>›</span></button>`).join("")}
-      ${shut.map(a => `<button class="pick" disabled>${esc(a.name)}<small>🔒 Upper body — locked until you're cleared</small></button>`).join("")}</div>`;
+      ${shut.map(a => `<button class="pick" disabled>${esc(a.name)}<small>🔒 ${lockMode() === "push" ? "Pushing/overhead" : "Upper body"} — locked until you're cleared</small></button>`).join("")}</div>`;
   }
   const a = actFor(L.type), vals = { date: today(), type: a.name, intensity: "moderate", where: "outdoor" };
   const fields = SPEC.cardio.rows.slice(1).map(r => `<div class="row">${r.map(fd => { const h = fieldHtml(fd, vals[fd.name], vals); return fd.show ? h.replace("<label", `<label data-show="${fd.show}"`) : h; }).join("")}</div>`).join("");
@@ -2195,18 +2221,18 @@ function logCardioSheet() {
       <button class="btn block">Save activity</button></form>`;
 }
 function fitStrength() {
-  const s = db.settings, t = today(), ws = weekStart(t), cleared = s.shouldersCleared;
+  const s = db.settings, t = today(), ws = weekStart(t), lm = lockMode();
   const thisWeek = newestFirst(db.strength.filter(x => x.date >= ws)), older = newestFirst(db.strength.filter(x => x.date < ws));
-  const goals = s.liftGoals.filter(g => g.area === "lower" || (g.area === "upper" && cleared));
-  const nLocked = s.liftGoals.filter(g => g.area === "upper").length;
+  const goals = s.liftGoals.filter(g => g.area === "lower" || (g.area === "upper" && !blocks(exMove(g.ex, "upper"))));
+  const nLocked = s.liftGoals.filter(g => g.area === "upper" && blocks(exMove(g.ex, "upper"))).length;
   return `
   ${weekHero("Strength this week", sumMin(db.strength, ws), s.strengthTarget,
     `<form data-form="add" data-k="strength" id="strengthForm" style="margin-top:18px">${specFields("strength", { date: t, area: "lower", sets: 3, ...lastAdd.strength })}
       <button class="btn block">Log exercise</button>
       <p class="faint">Logging a whole workout? Add each exercise, and put the time on one of them (or split it) — it all counts toward your weekly minutes.</p></form>`,
     thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(exRow("strength")).join("")}</ul>` : "")}
-  ${cleared ? "" : `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">Upper-body exercises locked</h2>
-    <p class="muted">Push-ups, presses, rows and other upper-body work unlock once your physical therapist or doctor clears you${nLocked ? ` — your ${nLocked} upper-body goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}. Lower-body work is open now.</p>
+  ${lm === "off" ? "" : `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">${lm === "push" ? "Pushing & overhead locked" : "Upper-body exercises locked"}</h2>
+    <p class="muted">${lm === "push" ? "Push-ups, presses, dips and overhead work stay locked for your shoulder. Rows, pulldowns, curls and other pulling work are open, along with core and lower body" : "Push-ups, presses, rows and other upper-body work unlock once your physical therapist or doctor clears you"}${nLocked ? ` — ${nLocked} goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}.</p>
     <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`}
   <div class="card"><h2>Strength goals ${goalsLink}</h2>
     ${goals.length ? goalList(goals) : `<p class="faint">No strength goals yet — add them in Settings.</p>`}
@@ -2223,7 +2249,7 @@ function fitCore() {
   <div class="card"><h2>Core <small>this week: ${sets} set${sets === 1 ? "" : "s"}${nEx ? ` · ${nEx} exercise${nEx === 1 ? "" : "s"}` : ""}</small></h2>
     <form data-form="add" data-k="core" id="coreForm">${specFields("core", { date: t, sets: 3, ...lastAdd.core })}
       <button class="btn block">Log exercise</button>
-      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${s.shouldersCleared ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT or doctor before doing those."}</p></form>
+      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${lockMode() === "off" ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT or doctor before doing those."}</p></form>
   </div>
   <div class="card"><h2>Core goals ${goalsLink}</h2>
     ${goals.length ? goalList(goals) : `<p class="faint">No core goals yet — add them in Settings.</p>`}</div>
@@ -2343,22 +2369,23 @@ const GUIDE = [
     ["Lowering the bar behind your neck.", "Arching your back off the bench."]]
 ].map(([key, name, group, upper, photos, muscles, steps, mistakes, note]) => ({ key, name, group, upper: !!upper, photos, muscles, steps, mistakes, note }));
 let openGuide = null;
+const guideMove = x => x.upper ? (PULL_RE.test(x.name) ? "pull" : "push") : null;
+const guideLocked = x => !!x.upper && blocks(guideMove(x));
 function guideCard() {
-  const locked = !db.settings.shouldersCleared;
   return `<div class="card"><h2>Exercise guide <small>${GUIDE.length} exercises · tap for photos</small></h2>
     ${GUIDE_GROUPS.map(([g, label]) => `<p class="faint" style="margin:12px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">${label}</p>
-      <div class="chips">${GUIDE.filter(x => x.group === g).map(x => `<button class="chip" data-act="guide" data-id="${x.key}">${esc(x.name)}${x.upper && locked ? " 🔒" : ""}</button>`).join("")}</div>`).join("")}
+      <div class="chips">${GUIDE.filter(x => x.group === g).map(x => `<button class="chip" data-act="guide" data-id="${x.key}">${esc(x.name)}${guideLocked(x) ? " 🔒" : ""}</button>`).join("")}</div>`).join("")}
     <p class="faint" style="margin-top:12px">Photos: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">Free Exercise DB</a> (public domain, Unlicense).</p></div>`;
 }
 function guideSheet(key) {
   const x = GUIDE.find(g => g.key === key); if (!x) return "";
-  const locked = x.upper && !db.settings.shouldersCleared;
+  const locked = guideLocked(x);
   const labels = x.photos.length === 2 ? ["Start", "End"] : ["Position"];
   return `<div class="grab"></div>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
       <div><div class="faint" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700;font-size:12px">${esc(GUIDE_GROUPS.find(g => g[0] === x.group)[1])}</div><h3>${esc(x.name)}</h3></div>
       <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
-    ${locked ? `<div class="banner warn" style="margin-top:10px">🔒 Upper-body exercise — locked for logging until your PT or doctor clears you.</div>` : ""}
+    ${locked ? `<div class="banner warn" style="margin-top:10px">🔒 ${guideMove(x) === "push" && lockMode() === "push" ? "Pushing/overhead exercise" : "Upper-body exercise"} — locked for logging until your PT or doctor clears you.</div>` : ""}
     ${x.photos.length ? `<div class="photos">${x.photos.map((p, i) => `<figure><img src="img/ex/${p}.jpg" alt="${esc(x.name)} — ${labels[i].toLowerCase()} position" loading="lazy"><figcaption>${labels[i]}</figcaption></figure>`).join("")}</div>` : ""}
     ${x.note ? `<p class="faint" style="margin-top:6px">${esc(x.note)}</p>` : ""}
     <h4>Muscles worked</h4><p>${esc(x.muscles)}</p>
@@ -2389,9 +2416,9 @@ const CTESTS = {
     cut: (a, sex) => (sex === "female" ? [[15, 21], [13, 20], [11, 15], [7, 11], [5, 12]] : [[22, 29], [17, 22], [13, 17], [10, 13], [8, 11]])[band(a, [29, 39, 49, 59, 200])] },
   plank: { name: "Plank hold", unit: "sec", dir: "hi", src: null, how: "Forearm plank with a straight body; stop when your hips sag.", cut: () => [30, 90] },
   backhold: { name: "Back-extension hold", unit: "sec", dir: "hi", src: null, how: "Superman hold: lie face down and hold arms, chest and legs just off the floor.", cut: () => [30, 90] },
-  deadhang: { name: "Dead hang", unit: "sec", dir: "hi", upper: 1, src: null, how: "Hang from a pull-up bar with straight arms for as long as you can.", cut: () => [20, 60] },
-  halfreps: { name: "Half pull-ups", unit: "reps", dir: "hi", upper: 1, src: null, how: "From a bent-arm hang (elbows at 90°), pull until your chin clears the bar.", cut: () => [3, 8] },
-  pullups: { name: "Full pull-ups", unit: "reps", dir: "hi", upper: 1, src: null, how: "From a full hang to chin over the bar, no kipping.", cut: () => [1, 5] },
+  deadhang: { mv: "pull", name: "Dead hang", unit: "sec", dir: "hi", upper: 1, src: null, how: "Hang from a pull-up bar with straight arms for as long as you can.", cut: () => [20, 60] },
+  halfreps: { mv: "pull", name: "Half pull-ups", unit: "reps", dir: "hi", upper: 1, src: null, how: "From a bent-arm hang (elbows at 90°), pull until your chin clears the bar.", cut: () => [3, 8] },
+  pullups: { mv: "pull", name: "Full pull-ups", unit: "reps", dir: "hi", upper: 1, src: null, how: "From a full hang to chin over the bar, no kipping.", cut: () => [1, 5] },
   squats: { name: "Bodyweight squats in a row", unit: "reps", dir: "hi", src: null, how: "Squats to about chair height with good form, without stopping.", cut: () => [15, 30] },
   balance: { name: "Single-leg stand (eyes open)", unit: "sec", dir: "hi", src: "springer", how: "Arms crossed, one foot lifted, near support. Best of 3 tries, up to 45 seconds; use your weaker leg.",
     cut: a => { const m = [44, 41, 41, 32, 21, 9][band(a, [39, 49, 59, 69, 79, 200])]; return [Math.round(m / 2), m]; } },
@@ -2484,8 +2511,8 @@ const CGOALS = [
 ];
 let coachSel = null;
 const coach = () => { const s = db.settings; if (!s.coach || typeof s.coach !== "object") s.coach = { goals: {} }; if (!s.coach.goals) s.coach.goals = {}; return s.coach; };
-const goalLocked = g => g.upper && !db.settings.shouldersCleared;
-const goalTests = g => g.tests.filter(k => !(CTESTS[k].upper && !db.settings.shouldersCleared));
+const goalLocked = g => !!g.upper && blocks("pull");
+const goalTests = g => g.tests.filter(k => !(CTESTS[k].upper && blocks(CTESTS[k].mv || "push")));
 const SAFETY = `<div class="banner warn"><b>Safety first.</b> Coach gives general guidance, not medical advice. Check with your doctor before starting a new exercise program — especially with a health condition, an injury, or symptoms like chest pain, dizziness or shortness of breath. Stop if something hurts.</div>`;
 function levelFrom(vals) {
   const s = db.settings, ls = Object.entries(vals).map(([k, v]) => testLevel(k, v, s.age, s.sex)).filter(x => x != null);
@@ -2519,13 +2546,28 @@ function viewCoach() {
     : c.goals[g.id] ? goalDetail(g) : intake(g);
   else if (active.length) body = active.map(g => { const gs = c.goals[g.id], last = gs.tests[gs.tests.length - 1];
       return `<button class="tile" data-act="coachSel" data-id="${g.id}" style="margin-bottom:12px"><div class="label">${esc(g.name)}</div>
-        <div class="value n" style="font-size:28px">Step ${gs.stage}<small>/ 4</small></div>
-        <div class="sub">${LEVELS[last.level]} · ${esc(g.stages[gs.stage - 1][0])} · next retest ${fmtD(nextRetest(gs))}</div></button>`; }).join("");
+        ${(() => { if (goalLocked(g)) return `<div class="sub">🔒 locked</div>`; const w = ensureWeeks(g, gs), st = weekStats(w), td = w.days.find(d => d.date === today());
+          return `<div class="value n" style="font-size:28px">${st.done}<small>/ ${st.total} done this week</small></div>
+          <div class="bar ${st.done >= st.total ? "good" : ""}" style="margin-top:6px"><span style="width:${st.total ? st.done / st.total * 100 : 0}%"></span></div>
+          <div class="sub">Today: ${td ? esc(td.title) + (td.done ? " ✓" : "") : "—"} · ${LEVELS[last.level]} · step ${gs.stage}</div>`; })()}</button>`; }).join("");
   else body = `<div class="card"><h2>How Coach works</h2><ol class="tips" style="padding-left:20px;margin:0">
       <li>Pick a goal above and answer a short intake with a few simple tests.</li>
       <li>Your results place you at <b>Beginner</b>, <b>Building</b> or <b>Strong</b> using published age-based norms where they exist (sources shown with each goal).</li>
       <li>You get a 4-step plan starting at your level. Retest once a month to unlock the next step.</li></ol></div>`;
   return `${SAFETY}<div class="card"><h2>Pick a goal <small>${active.length} active</small></h2>${chips}</div>${body}`;
+}
+function equipFields() {
+  const s = db.settings, eq = new Set(s.equip || []), lim = s.limits || {};
+  return `<p class="muted" style="margin:14px 0 6px">What equipment do you have? <span class="faint">(walking outside is always included)</span></p>
+    <div class="chips">${Object.entries(EQUIP).map(([k, l]) => `<label class="chip chk"><input type="checkbox" name="eq" value="${k}"${eq.has(k) ? " checked" : ""}>${l}</label>`).join("")}</div>
+    <label>Upper-body limits<select name="lockMode">${Object.entries(LOCK_LABEL).map(([k, l]) => `<option value="${k}"${lockMode() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+    <div class="chips" style="margin-top:-4px">${Object.entries(LIMITS).map(([k, l]) => `<label class="chip chk"><input type="checkbox" name="lim" value="${k}"${lim[k] ? " checked" : ""}>${l}</label>`).join("")}</div>`;
+}
+function readEquip(f) {
+  const s = db.settings;
+  s.equip = f.getAll("eq"); s.limits = Object.fromEntries(f.getAll("lim").map(k => [k, true]));
+  const lm = f.get("lockMode");
+  if (lm) { if (lm === "off" && !s.shouldersCleared) s.clearedDate = today(); s.shouldersCleared = lm === "off"; if (lm !== "off") s.lockMode = lm; s.lockModeSet = true; }
 }
 function intake(g) {
   const s = db.settings;
@@ -2537,29 +2579,28 @@ function intake(g) {
       <div class="row">
         <label>Days per week available<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === 3 ? " selected" : ""}>${d}</option>`).join("")}</select></label>
         <label>Target date<input type="date" name="target" value="${addDays(today(), 84)}" min="${today()}"></label></div>
-      <label>Injuries or limits<textarea name="injuries" rows="2" placeholder="e.g. left knee, lower back — or leave blank"></textarea></label>
-      ${s.shouldersCleared ? "" : `<p class="faint">🔒 Upper-body tests and steps are skipped while your upper-body lock is on.</p>`}
+      ${equipFields()}
+      <label>Other injuries or notes<textarea name="injuries" rows="2" placeholder="e.g. left shoulder — or leave blank"></textarea></label>
+      ${lockMode() === "off" ? "" : `<p class="faint">🔒 ${lockMode() === "push" ? "Pushing and overhead tests are" : "Upper-body tests are"} skipped while your upper-body lock is on.</p>`}
       <h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 8px">Quick tests</h4>
       ${testInputs(g)}
-      <button class="btn block">Build my plan</button>
+      <button class="btn block">Build my weekly plan</button>
       <p class="faint">Skip any test you can't do safely — your level uses the ones you enter.</p>
     </form></div>`;
 }
 function goalDetail(g) {
   const s = db.settings, gs = coach().goals[g.id], last = gs.tests[gs.tests.length - 1], due = nextRetest(gs), canUnlock = today() >= due;
-  const locked = !s.shouldersCleared, daysLeft = gs.target ? Math.round((parseD(gs.target) - parseD(today())) / 864e5) : null;
-  const step = x => x.startsWith("U:") ? (locked ? `<li class="faint">🔒 ${esc(x.slice(2))} <i>(after clearance)</i></li>` : `<li>${esc(x.slice(2))}</li>`) : `<li>${esc(x)}</li>`;
+  const daysLeft = gs.target ? Math.round((parseD(gs.target) - parseD(today())) / 864e5) : null;
   const srcs = [...new Set(goalTests(g).map(k => CTESTS[k].src))];
   return `<div class="card hero"><h2>${esc(g.name)} <small>${gs.days} day${gs.days === 1 ? "" : "s"}/week</small></h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="st ${["warn", "none", "good"][last.level]}"><i>${["1", "2", "3"][last.level]}</i>${LEVELS[last.level]}</span>
         <span class="tag">Step ${gs.stage} of 4</span>${daysLeft != null ? `<span class="tag">${daysLeft >= 0 ? `${Math.ceil(daysLeft / 7)} weeks to ${fmtD(gs.target)}` : `target was ${fmtD(gs.target)}`}</span>` : ""}</div>
       <div class="ladder">${g.stages.map((st, i) => `<div class="${i + 1 < gs.stage ? "done" : i + 1 === gs.stage ? "now" : ""}"><span>${i + 1 < gs.stage ? "✓" : i + 1}</span>${esc(st[0])}</div>`).join("")}</div>
-      <h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 6px">Step ${gs.stage}: ${esc(g.stages[gs.stage - 1][0])}</h4>
-      <ul class="tips" style="padding-left:20px;margin:0">${g.stages[gs.stage - 1][1].map(step).join("")}</ul>
-      <p class="muted" style="margin:10px 0 0">💡 ${esc(g.stages[gs.stage - 1][2])}</p>
+      <p class="muted" style="margin:12px 0 0"><b>Step ${gs.stage}: ${esc(g.stages[gs.stage - 1][0])}.</b> 💡 ${esc(g.stages[gs.stage - 1][2])}</p>
       ${gs.injuries ? `<p class="faint" style="margin-top:8px">Your limits: ${esc(gs.injuries)} — skip or modify anything that aggravates them.</p>` : ""}
       ${gs.stage < 4 ? `<p class="faint" style="margin-top:10px">🔒 Step ${gs.stage + 1} (${esc(g.stages[gs.stage][0])}) unlocks with your monthly retest ${canUnlock ? "— <b>you can retest now</b>" : `on ${fmtD(due)}`}.</p>` : `<p class="faint" style="margin-top:10px">You've reached the final step. Keep retesting monthly to track progress.</p>`}
     </div>
+    ${planCards(g, gs)}
     <div class="card"><h2>Your tests <small>${gs.tests.length} result${gs.tests.length === 1 ? "" : "s"}</small></h2>
       <table><thead><tr><th>Test</th><th>Latest</th><th>Level</th></tr></thead><tbody>${goalTests(g).map(k => { const v = last.vals[k], lv = testLevel(k, v, s.age, s.sex), t = CTESTS[k];
         return `<tr><td>${esc(t.name)}<div class="faint" style="font-size:12px">${cutText(k, s.age, s.sex)}</div></td><td class="v">${v == null ? "—" : k === "mile" ? fmtMS(v) : nf(v)}</td><td>${lv == null ? '<span class="faint">skipped</span>' : LEVELS[lv]}</td></tr>`; }).join("")}</tbody></table>
@@ -2577,8 +2618,10 @@ function goalDetail(g) {
       <form data-form="coachPlan"><div class="row">
         <label>Days per week<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === gs.days ? " selected" : ""}>${d}</option>`).join("")}</select></label>
         <label>Target date<input type="date" name="target" value="${gs.target || ""}"></label></div>
-        <label>Injuries or limits<textarea name="injuries" rows="2">${esc(gs.injuries || "")}</textarea></label>
-        <button class="btn secondary block">Save plan settings</button></form>
+        ${equipFields()}
+        <label>Other injuries or notes<textarea name="injuries" rows="2">${esc(gs.injuries || "")}</textarea></label>
+        <button class="btn secondary block">Save and rebuild this week</button>
+        <p class="faint">Workouts you've already checked off this week are kept.</p></form>
       <button class="btn danger block" style="margin-top:10px" data-act="coachStop" data-id="${g.id}">Stop this goal</button></div>`;
 }
 const coachForms = {
@@ -2586,6 +2629,7 @@ const coachForms = {
     const s = db.settings, g = CGOALS.find(x => x.id === coachSel); if (!g) return;
     if (f.get("age")) { s.age = num(f.get("age")) || s.age; s.sex = f.get("sex") || "male"; }
     if (!s.sex) s.sex = "male";
+    readEquip(f);
     const vals = readTests(g, f), level = levelFrom(vals);
     coach().goals[g.id] = { started: today(), days: +f.get("days") || 3, target: f.get("target") || null, injuries: String(f.get("injuries") || "").trim(),
       stage: level + 1, unlockedAt: today(), tests: [{ date: today(), vals, level }] };
@@ -2604,9 +2648,317 @@ const coachForms = {
   coachPlan(f) {
     const gs = coach().goals[coachSel]; if (!gs) return;
     gs.days = +f.get("days") || gs.days; gs.target = f.get("target") || null; gs.injuries = String(f.get("injuries") || "").trim();
+    readEquip(f);
+    const g = CGOALS.find(x => x.id === coachSel); gs.weeks = gs.weeks || {};
+    for (const k of Object.keys(gs.weeks)) if (k >= mondayOf(today())) rebuildWeek(g, gs, k);
     save(); toast("Plan updated");
   }
 };
+
+// =====================================================================
+// Coach weekly plans (rules, no AI): goal + level + step + days/week + equipment + limits → Mon–Sun plan
+// =====================================================================
+const EQUIP = { bike: "Exercise bike", pad: "Walking pad", treadmill: "Treadmill", dumbbells: "Dumbbells", bands: "Resistance bands", bar: "Pull-up bar", gym: "Gym access" };
+const LIMITS = { knee: "Knee — no jumping, lunges or deep squats", back: "Lower back — no heavy deadlifts", wrist: "Wrist — no weight on hands" };
+const PLAN_SRC = {
+  cdc: ["CDC: Physical activity guidelines for adults — 150 min/week moderate activity plus muscle-strengthening on 2 or more days", "https://www.cdc.gov/physical-activity-basics/guidelines/adults.html"],
+  aha: ["AHA: Recommendations for physical activity in adults — 150 min moderate or 75 min vigorous, strength on at least 2 days, more benefit at 300+ min", "https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults"],
+  acsmRT: ["ACSM Position Stand: Progression models in resistance training for healthy adults (2009) — beginners 8–12 reps, 2–3 days/week; add 2–10% load when you can do 1–2 reps over target", "https://sfu.ca/~ryand/kin343/ACSMresistance.pdf"],
+  acsmFlex: ["ACSM: Stretching and flexibility guidelines — 2–3+ days/week, hold static stretches 10–30 s (30–60 s for older adults)", "https://www.acsm.org/blog-detail/acsm-certified-blog/2021/03/18/stretching-and-flexibility-guidelines-update"]
+};
+// Exercise catalog for plans: guide key → equipment that allows it, movement, limits that block it
+const PEX = {
+  dbrow: { eq: ["dumbbells", "gym"], mv: "pull" }, pulldown: { eq: ["gym"], mv: "pull" }, cablerow: { eq: ["gym"], mv: "pull" }, facepull: { eq: ["gym", "bands"], mv: "pull" },
+  hang: { eq: ["bar", "gym"], mv: "pull" }, negpullup: { eq: ["bar", "gym"], mv: "pull" }, asspullup: { eq: ["gym", "bar"], mv: "pull" }, pullup: { eq: ["bar", "gym"], mv: "pull" },
+  curl: { eq: ["dumbbells", "gym", "bands"], mv: "pull" }, hammer: { eq: ["dumbbells", "gym"], mv: "pull" },
+  dip: { eq: [], mv: "push", lim: ["wrist"] }, pushdown: { eq: ["gym", "bands"], mv: "push" }, pushup: { eq: [], mv: "push", lim: ["wrist"] },
+  bench: { eq: ["gym"], mv: "push" }, ohp: { eq: ["dumbbells", "gym"], mv: "push" }, latraise: { eq: ["dumbbells", "gym", "bands"], mv: "push" },
+  smithbench: { eq: ["gym"], mv: "push" }, smithohp: { eq: ["gym"], mv: "push" },
+  squat: { eq: [] }, goblet: { eq: ["dumbbells", "gym"] }, smithsquat: { eq: ["gym"] }, lunge: { eq: [], lim: ["knee"] }, calf: { eq: [] },
+  deadlift: { eq: ["gym"], lim: ["back"] }, rdl: { eq: ["dumbbells", "gym"], lim: ["back"] }, bridge: { eq: [] }, superman: { eq: [] },
+  plank: { eq: [] }, sideplank: { eq: [] }, deadbug: { eq: [] }, crunch: { eq: [] }, birddog: { eq: [], lim: ["wrist"] },
+  hipflexor: { eq: [] }, squathold: { eq: [], lim: ["knee"] }, onelegstand: { eq: [] }
+};
+const planCtx = () => { const s = db.settings; return { equip: new Set(s.equip || []), limits: s.limits || {} }; };
+function exOk(key, ctx) {
+  const x = PEX[key]; if (!x) return false;
+  if (x.mv && blocks(x.mv)) return false;
+  if (x.eq.length && !x.eq.some(e => ctx.equip.has(e))) return false;
+  return !(x.lim || []).some(l => ctx.limits[l]);
+}
+const firstOk = (keys, ctx, used) => keys.find(k => exOk(k, ctx) && !used.has(k));
+// Strength dose by level (Beginner/Building/Strong) and progression step p
+function dose(key, lvl, p) {
+  const name = GUIDE.find(g => g.key === key).name;
+  const hold = { plank: [20, 40, 60], sideplank: [15, 30, 45], hang: [10, 20, 30], squathold: [20, 45, 60], onelegstand: [20, 30, 40], hipflexor: [30, 30, 45] }[key];
+  if (hold) {
+    const sec = Math.min(hold[lvl] + p * (key === "hipflexor" ? 0 : 5), key === "plank" ? 120 : 90), sets = key === "hipflexor" ? 2 : lvl === 0 ? 2 : 3;
+    const side = ["sideplank", "onelegstand", "hipflexor"].includes(key);
+    return { key, name, sets, sec, perSide: side, text: `${sets} × ${sec} s${side ? " each side" : ""}`, rest: "30–45 s", src: ["hipflexor", "squathold"].includes(key) ? "acsmFlex" : null };
+  }
+  if (key === "negpullup") { const reps = Math.min(3 + p, 5); return { key, name, sets: 3, reps, text: `3 × ${reps}, 3–5 s down`, rest: "2 min", src: null }; }
+  if (key === "pullup") { const reps = Math.min(1 + p, 6); return { key, name, sets: 3, reps, text: `3 × ${reps}${reps < 3 ? " (or as many as you can)" : ""}`, rest: "2 min", src: null }; }
+  const core = ["deadbug", "birddog", "crunch", "superman"].includes(key), side = ["deadbug", "birddog", "lunge", "dbrow"].includes(key);
+  const base = core ? [8, 10, 12][lvl] : [12, 10, 8][lvl];
+  const sets = Math.min(4, [2, 3, 3][lvl] + (p >= 2 ? 1 : 0)), reps = base + (core ? 2 : 1) * (p % 2 ? 1 : 0) + (core ? 2 * Math.floor(p / 2) : 0);
+  return { key, name, sets, reps, perSide: side, text: `${sets} × ${reps}${side ? " each side" : ""}`, rest: core ? "30–45 s" : ["60–90 s", "90 s", "2 min"][lvl], src: core ? null : "acsmRT" };
+}
+// Slot preference lists → exercise keys (first one allowed by equipment and limits wins)
+const SLOT_PREF = {
+  legs: lvl => lvl === 0 ? ["squat", "goblet", "smithsquat"] : ["goblet", "smithsquat", "squat"],
+  legs2: () => ["lunge", "calf", "squat", "bridge"],
+  hinge: lvl => lvl === 0 ? ["bridge", "rdl"] : ["rdl", "deadlift", "bridge"],
+  pull: () => ["dbrow", "cablerow", "pulldown", "facepull"],
+  pull2: () => ["pulldown", "facepull", "cablerow", "dbrow", "hammer"],
+  push: lvl => lvl === 0 ? ["pushup", "bench", "smithbench"] : ["bench", "smithbench", "pushup"],
+  push2: () => ["ohp", "smithohp", "latraise", "dip"],
+  arms: () => ["curl", "hammer", "pushdown"],
+  core: () => ["deadbug", "plank", "birddog", "sideplank", "crunch"],
+  core2: () => ["sideplank", "crunch", "deadbug", "plank", "superman"],
+  back: () => ["superman", "birddog"],
+  calf: () => ["calf"],
+  hang: () => ["hang"], pullprog: lvl => lvl === 0 ? ["asspullup", "pulldown", "dbrow"] : lvl === 1 ? ["negpullup", "asspullup", "pulldown"] : ["pullup", "negpullup"],
+  mob: () => ["hipflexor", "squathold", "bridge"], bal: () => ["onelegstand", "calf", "bridge"]
+};
+const STRENGTH_SLOTS = {
+  full: ["legs", "pull", "push", "hinge", "core"], fullB: ["hinge", "pull2", "legs2", "arms", "core2"],
+  upper: ["pull", "push", "pull2", "push2", "arms"], lower: ["legs", "hinge", "legs2", "calf", "core"],
+  back: ["pull", "hinge", "back", "pull2", "core"], pull: ["hang", "pullprog", "pull", "arms", "core"],
+  core: ["core", "core2", "back", "core"], legsRun: ["legs", "legs2", "calf", "hinge", "core"],
+  mobility: ["mob", "mob", "mob"], balance: ["bal", "bal", "legs", "core"]
+};
+function strengthItems(slots, lvl, p, ctx) {
+  const used = new Set(), items = [];
+  for (const sl of slots) {
+    let k = firstOk(SLOT_PREF[sl](lvl), ctx, used);
+    // blocked pushes get swapped for pulling or core work
+    if (!k && /push/.test(sl)) k = firstOk([...SLOT_PREF.pull2(), ...SLOT_PREF.core2()], ctx, used);
+    if (!k) continue;
+    used.add(k); items.push(dose(k, lvl, p));
+  }
+  if (slots === STRENGTH_SLOTS.mobility) items.push({ key: null, name: "Hamstring stretch", sets: 2, sec: 30, text: "2 × 30 s each side", rest: "", src: "acsmFlex" });
+  if (slots === STRENGTH_SLOTS.balance) items.push({ key: null, name: "Heel-to-toe walk", sets: 2, reps: 10, text: "2 × 10 steps, near support", rest: "", src: null });
+  return items;
+}
+// Cardio choice by equipment and limits
+function cardioPick(kind, ctx) {
+  const e = ctx.equip, knee = ctx.limits.knee, opts = [];
+  if (kind === "intervals") { if (e.has("bike") || e.has("gym")) opts.push("Peloton / indoor bike"); if (e.has("treadmill") || e.has("gym")) opts.push("Incline walk"); if (e.has("gym")) opts.push("Elliptical"); }
+  else { if (e.has("treadmill") || e.has("gym")) opts.push("Incline walk"); if (e.has("pad")) opts.push("Indoor walk (walking pad)"); if (e.has("bike") || e.has("gym")) opts.push("Peloton / indoor bike"); if (e.has("gym")) opts.push("Elliptical"); }
+  opts.push("Walk (outdoor)");
+  return opts.filter(n => !(knee && /StairMaster|Running/.test(n)) && !actLocked(actFor(n)));
+}
+const ROTATION = {
+  fat: ["steady", "full", "intervals", "fullB", "long", "steady", "core"], muscle: ["full", "fullB", "steady", "full", "fullB", "core", "steady"],
+  recomp: ["full", "steady", "fullB", "intervals", "full", "core", "long"], core: ["core", "steady", "core", "full", "core", "steady", "core"],
+  back: ["back", "steady", "back", "core", "back", "steady", "core"], upper: ["upper", "steady", "upper", "core", "upper", "steady", "core"],
+  lower: ["lower", "steady", "lower", "core", "lower", "steady", "core"], pullup: ["pull", "steady", "pull", "core", "pull", "steady", "core"],
+  mile: ["easyrun", "intervalsRun", "legsRun", "easyrun", "tempo", "easyrun", "core"], race: ["easyrun", "intervalsRun", "longrun", "legsRun", "tempo", "easyrun", "core"],
+  heart: ["steady", "full", "intervals", "steady", "fullB", "long", "steady"], mobility: ["mobility", "steady", "mobility", "core", "mobility", "steady", "mobility"],
+  balance: ["balance", "steady", "balance", "lower", "balance", "steady", "balance"], injury: ["rehab", "steady", "rehab", "core", "rehab", "steady", "rehab"]
+};
+const DAY_PATTERN = { 1: [2], 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
+// One training session. Returns { title, cardio: {type, min, intensity, how}|null, items: [...], src: [...] }
+function session(kind, gid, lvl, stage, p, ctx, n) {
+  const base = [20, 30, 40][lvl] + (stage - 1) * 5 + p * 5, M = Math.min(base, 75);
+  const steady = (min, label) => { const types = cardioPick("steady", ctx), type = types[n % types.length];
+    return { type, min, intensity: "moderate", how: `${label || "Steady"} at a moderate pace — you can talk but not sing` }; };
+  if (kind === "steady") return { title: "Cardio", cardio: steady(M), items: [], src: ["cdc", "aha"] };
+  if (kind === "long") return { title: "Longer easy cardio", cardio: { ...steady(Math.min(Math.round(M * 1.4 / 5) * 5, 90), "Easy"), intensity: "easy", how: "Easy, comfortable pace — the long one of the week" }, items: [], src: ["aha"] };
+  if (kind === "intervals") {
+    const type = cardioPick("intervals", ctx)[0], rounds = Math.min([6, 8, 8][lvl] + p, 12), hard = lvl === 2 ? 1 : 1, easy = lvl === 2 ? 1 : 2;
+    return { title: "Intervals", cardio: { type, min: 10 + rounds * (hard + easy), intensity: "hard", how: `5 min easy warm-up, then intervals: ${hard} min hard, ${easy} min easy × ${rounds}, then 5 min easy` }, items: [], src: ["aha"] };
+  }
+  if (kind === "easyrun") return { title: "Easy run", cardio: { type: "Running / jogging", min: M, intensity: "easy", how: lvl === 0 ? "Run/walk: 2 min jog, 1 min walk, repeat — easy enough to talk" : "Easy, conversational pace" }, items: [], src: ["cdc"] };
+  if (kind === "longrun") return { title: "Long run", cardio: { type: "Running / jogging", min: Math.min(M + 15, 90), intensity: "easy", how: "Slow and steady — the longest run of the week" }, items: [], src: ["aha"] };
+  if (kind === "tempo") { const t = 10 + lvl * 5 + p * 2; return { title: "Tempo run", cardio: { type: "Running / jogging", min: t + 15, intensity: "hard", how: `10 min easy, ${t} min comfortably hard, 5 min easy` }, items: [], src: ["aha"] }; }
+  if (kind === "intervalsRun") { const r = Math.min([4, 6, 8][lvl] + p, 10); return { title: "Speed intervals", cardio: { type: "Running / jogging", min: 15 + r * 4, intensity: "hard", how: `10 min easy, then ${r} × 2 min at goal mile pace with 2 min walk, 5 min easy` }, items: [], src: ["aha"] }; }
+  if (kind === "rehab") return { title: "Rehab + easy movement", cardio: { ...steady(Math.min(15 + p * 5, 30), "Easy"), intensity: "easy", how: "Easy, low-impact — stop if pain rises above 3/10" },
+    items: [{ key: null, name: "Your PT's exercises", text: "as prescribed", rest: "", src: null }, ...strengthItems(STRENGTH_SLOTS.mobility, 0, 0, ctx).slice(0, 2)], src: ["acsmFlex"] };
+  const slots = STRENGTH_SLOTS[kind] || STRENGTH_SLOTS.full, items = strengthItems(slots, lvl, p, ctx);
+  const titles = { full: "Strength — full body", fullB: "Strength — full body B", upper: ctx && blocks("push") ? "Strength — pulling" : "Strength — upper body", lower: "Strength — lower body",
+    back: "Strength — back", pull: "Pull-up practice", core: "Core", legsRun: "Strength for runners", mobility: "Mobility", balance: "Balance" };
+  const src = kind === "mobility" ? ["acsmFlex"] : kind === "core" || kind === "balance" ? [] : ["acsmRT", "cdc"];
+  return { title: titles[kind] || "Strength", cardio: null, items, src };
+}
+const itemMin = it => Math.round(((it.sets || 1) * ((it.sec || 40) / 60 + (/2 min/.test(it.rest) ? 2 : /90/.test(it.rest) ? 1.5 : 0.75)) * (it.perSide ? 1.5 : 1)));
+const dayMinutes = d => (d.cardio ? d.cardio.min : 0) + d.items.reduce((a, it) => a + itemMin(it), 0);
+function dayKcal(d) {
+  let k = d.cardio ? cardioCalc({ type: d.cardio.type, min: d.cardio.min, intensity: d.cardio.intensity }).kcal : 0;
+  const sm = d.items.reduce((a, it) => a + itemMin(it), 0), met = d.kind === "mobility" || d.kind === "rehab" ? 2.5 : d.kind === "core" || d.kind === "balance" ? 3.8 : 5;
+  return Math.round(k + met * restPerMin() * sm);
+}
+const mondayOf = d => { const x = parseD(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dstr(x); };
+function buildWeek(g, gs, start, p, note) {
+  const ctx = planCtx(), last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
+  const trainIdx = DAY_PATTERN[D], rot = ROTATION[g.id] || ROTATION.fat, walkGoal = ["fat", "heart", "recomp", "injury"].includes(g.id);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(start, i), ti = trainIdx.indexOf(i);
+    if (ti >= 0) { const kind = rot[ti % rot.length], sx = session(kind, g.id, lvl, gs.stage || 1, p, ctx, ti); days.push({ date, train: true, kind, ...sx, done: false, logged: null }); }
+    else { const walk = walkGoal && D < 7 && i % 2 === 0 && i !== 6;
+      days.push({ date, train: false, kind: walk ? "walk" : "rest", title: walk ? "Easy walk" : "Rest", cardio: walk ? { type: "Walk (outdoor)", min: 20, intensity: "easy", how: "Optional easy walk, 15–20 min" } : null, items: [], src: [], done: false, logged: null }); }
+  }
+  return { start, p, note, lvl, stage: gs.stage || 1, days, built: today() };
+}
+const weekStats = w => { const tr = w.days.filter(d => d.train); return { done: tr.filter(d => d.done).length, total: tr.length }; };
+function wakeAvg(from, to) { const v = db.weights.filter(w => w.type === "wake" && w.date >= from && w.date <= to).map(w => w.w); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+// Progress, repeat or ease back based on last week
+function adapt(g, prev) {
+  if (!prev) return { p: 0, note: "Your first week — it's set to your current level." };
+  const st = weekStats(prev), share = st.total ? st.done / st.total : 0;
+  const a = wakeAvg(prev.start, addDays(prev.start, 6)), b = wakeAvg(addDays(prev.start, -7), addDays(prev.start, -1));
+  const weightGoal = ["fat", "recomp", "heart"].includes(g.id), dropped = a != null && b != null && a < b;
+  const did = `You finished ${st.done} of ${st.total} workouts last week`;
+  if (share >= 0.75 && (!weightGoal || dropped)) return { p: prev.p + 1, note: `${did}${weightGoal ? ` and your weekly average dropped ${r1(b - a)} lb` : ""} — stepping up slightly (a few more minutes, reps or rounds).` };
+  if (share < 0.5) return { p: Math.max(0, prev.p - 1), note: `${did} — easing back a little so it's easier to get them all in.` };
+  return { p: prev.p, note: weightGoal && share >= 0.75 && !dropped ? `${did}, but your weekly average didn't drop${a == null || b == null ? " (not enough weigh-ins to compare)" : ""} — repeating the same plan.` : `${did} — repeating the same plan to lock it in.` };
+}
+// Make sure this week (and, from Sunday 6 pm, next week) exist; rebuild a not-yet-started future week as last week changes
+function ensureWeeks(g, gs) {
+  gs.weeks = gs.weeks || {};
+  const cur = mondayOf(today());
+  if (!gs.weeks[cur]) { const prev = gs.weeks[addDays(cur, -7)], a = adapt(g, prev); gs.weeks[cur] = buildWeek(g, gs, cur, a.p, a.note); save(); }
+  const next = addDays(cur, 7), sundayNight = parseD(today()).getDay() === 0 && new Date().getHours() >= 18;
+  const nx = gs.weeks[next];
+  if (sundayNight && (!nx || !nx.days.some(d => d.done))) { const a = adapt(g, gs.weeks[cur]); gs.weeks[next] = buildWeek(g, gs, next, a.p, a.note); save(); }
+  return gs.weeks[cur];
+}
+function rebuildWeek(g, gs, start) {
+  const old = gs.weeks[start], w = buildWeek(g, gs, start, old ? old.p : 0, old ? old.note : "");
+  if (old) w.days.forEach((d, i) => { const o = old.days[i]; if (o && o.done) w.days[i] = o; });
+  gs.weeks[start] = w;
+}
+// "Done": log the day's work to Cardio / Strength / Core with estimated calories; "Undo" removes it again
+function completeDay(gid, start, i) {
+  const gs = coach().goals[gid], d = gs && gs.weeks[start] && gs.weeks[start].days[i]; if (!d || d.done) return;
+  const logged = { cardio: [], strength: [], core: [] }, plan = `${CGOALS.find(x => x.id === gid).name} plan`;
+  if (d.cardio) { const id = uid(); db.cardio.push({ id, date: d.date, type: d.cardio.type, min: d.cardio.min, intensity: d.cardio.intensity, src: "plan", note: plan }); logged.cardio.push(id); }
+  let first = true;
+  for (const it of d.items) {
+    if (!it.key && !it.sets) continue;
+    const id = uid(), px = PEX[it.key] || {}, coreLike = !px.mv && (it.sec || ["deadbug", "birddog", "crunch", "superman", "plank", "sideplank"].includes(it.key) || !it.key);
+    if (coreLike) { db.core.push({ id, date: d.date, ex: it.name, sets: it.sets || 1, reps: it.reps || null, sec: it.sec || null, src: "plan" }); logged.core.push(id); }
+    else { db.strength.push({ id, date: d.date, area: px.mv ? "upper" : "lower", ex: it.name, sets: it.sets, reps: it.reps || 1, weight: null, min: first ? d.items.reduce((a, x) => a + itemMin(x), 0) : null, src: "plan" }); logged.strength.push(id); first = false; }
+  }
+  d.done = true; d.logged = logged; save();
+}
+function undoDay(gid, start, i) {
+  const gs = coach().goals[gid], d = gs && gs.weeks[start] && gs.weeks[start].days[i]; if (!d || !d.done) return;
+  const L = d.logged || {};
+  db.cardio = db.cardio.filter(x => !(L.cardio || []).includes(x.id)); db.strength = db.strength.filter(x => !(L.strength || []).includes(x.id)); db.core = db.core.filter(x => !(L.core || []).includes(x.id));
+  d.done = false; d.logged = null; save();
+}
+// ---------- plan UI
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function dayCard(gid, w, i, readOnly) {
+  const d = w.days[i], isToday = d.date === today(), future = d.date > today(), mins = dayMinutes(d);
+  const itemHtml = it => `<li>${it.key ? `<button type="button" class="link" data-act="guide" data-id="${it.key}">${esc(it.name)}</button>` : esc(it.name)} <span class="faint">— ${esc(it.text)}${it.rest ? `, rest ${esc(it.rest)}` : ""}</span>${it.src ? ` <span class="src-tag">${it.src === "acsmFlex" || it.src === "acsmRT" ? "ACSM" : it.src.toUpperCase()}</span>` : ""}</li>`;
+  return `<div class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.train ? "" : " rest"}">
+    <div class="day-top"><div><b>${DOW[i]}</b> <span class="faint">${fmtD(d.date)}</span>${isToday ? ' <span class="tag red">Today</span>' : ""}</div>
+      ${d.train || d.cardio ? `<span class="faint">${mins ? `~${mins} min` : ""}${mins ? ` · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
+    <div class="day-title">${esc(d.title)}</div>
+    ${d.cardio ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}${d.src.length ? ` <span class="src-tag">${d.src.filter(x => x === "cdc" || x === "aha").map(x => x.toUpperCase()).join("/") || ""}</span>` : ""}</div>` : ""}
+    ${d.items.length ? `<ul class="day-items">${d.items.map(itemHtml).join("")}</ul>` : ""}
+    ${readOnly ? (d.train ? `<div class="faint" style="margin-top:6px">${d.done ? "✓ Done" : "Not done"}</div>` : "")
+      : d.done ? `<div class="day-done">✓ Done — logged${d.cardio ? " to Cardio" : ""}${d.items.length ? `${d.cardio ? " and" : " to"} ${d.kind === "core" || d.kind === "mobility" || d.kind === "balance" ? "Strength (core)" : "Strength"}` : ""} <button type="button" class="btn ghost small" data-act="planUndo" data-g="${gid}" data-w="${w.start}" data-i="${i}">Undo</button></div>`
+      : d.train || d.cardio ? `<button type="button" class="btn ${d.train ? "" : "secondary"} small block" data-act="planDone" data-g="${gid}" data-w="${w.start}" data-i="${i}"${future ? " disabled" : ""} style="margin-top:10px">${future ? `Available ${DOW[i]}` : d.train ? "✓ Done" : "✓ Walked"}</button>` : ""}
+  </div>`;
+}
+function weekProgress(w) {
+  const st = weekStats(w), pct = st.total ? st.done / st.total * 100 : 0;
+  return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><b>${st.done} of ${st.total} workouts done</b><span class="faint">${Math.round(pct)}%</span></div>
+    <div class="bar ${st.done >= st.total && st.total ? "good" : ""}" style="margin:6px 0 4px"><span style="width:${pct}%"></span></div>`;
+}
+function planCards(g, gs) {
+  const w = ensureWeeks(g, gs), next = gs.weeks[addDays(w.start, 7)];
+  const past = Object.keys(gs.weeks).filter(k => k < w.start).sort().reverse();
+  const used = [...new Set(w.days.flatMap(d => [...d.src, ...d.items.map(i => i.src)]).filter(Boolean))];
+  const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment";
+  return `<div class="card hero"><h2>This week's plan <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
+      ${weekProgress(w)}
+      <p class="faint" style="margin:6px 0 0">${esc(w.note)} ${LEVELS[w.lvl]} level · step ${w.stage} · ${gs.days} day${gs.days === 1 ? "" : "s"}/week · ${esc(equipTxt)}${lockMode() !== "off" ? ` · ${lockMode() === "push" ? "no pushing/overhead" : "no upper body"}` : ""}${Object.keys(ctx.limits).filter(k => ctx.limits[k]).length ? " · " + Object.keys(ctx.limits).filter(k => ctx.limits[k]).map(k => k).join(", ") + " limits" : ""}.</p>
+      <div class="days">${w.days.map((_, i) => dayCard(g.id, w, i)).join("")}</div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn secondary small" data-act="planPdf" data-g="${g.id}" data-scope="week" style="flex:1">⬇ Download this week (PDF)</button>
+        <button class="btn ghost small" data-act="planPdf" data-g="${g.id}" data-scope="program" style="flex:1">⬇ 4-week program (PDF)</button></div>
+    </div>
+    ${next ? `<div class="card"><h2>Next week's plan <small>${fmtD(next.start)} – ${fmtD(addDays(next.start, 6))}</small></h2>
+      <p class="muted" style="margin-top:0">${esc(next.note)}</p><div class="days">${next.days.map((_, i) => dayCard(g.id, next, i, true)).join("")}</div></div>` : ""}
+    <div class="card"><h2>Past weeks <small>${past.length}</small></h2>
+      ${past.length ? past.map(k => { const pw = gs.weeks[k], st = weekStats(pw);
+        return `<details id="pw-${g.id}-${k}" style="margin-top:8px"><summary>${fmtD(k)} – ${fmtD(addDays(k, 6))} · ${st.done}/${st.total} ${st.total && st.done >= st.total ? "✓ Finished" : st.done / (st.total || 1) >= 0.75 ? "· mostly done" : ""}</summary>
+          <p class="faint" style="margin-top:0">${esc(pw.note)}</p><div class="days">${pw.days.map((_, i) => dayCard(g.id, pw, i, true)).join("")}</div></details>`; }).join("")
+        : `<p class="faint" style="margin:0">Finished weeks will show up here.</p>`}</div>
+    <div class="card"><h2>Guidelines behind this plan</h2>
+      <ul class="src" style="padding-left:18px;margin:0">${used.map(k => `<li><a href="${PLAN_SRC[k][1]}" target="_blank" rel="noopener">${esc(PLAN_SRC[k][0])}</a></li>`).join("")}</ul>
+      <p class="faint" style="margin-bottom:0">Set counts, rest times, interval patterns and exercise choices are the app's coaching defaults built around these guidelines. Weekly changes follow your results: most workouts done${["fat", "recomp", "heart"].includes(g.id) ? " and a lower weekly weight average" : ""} → step up slightly; fewer than half → ease back; otherwise repeat.</p></div>`;
+}
+
+// ---------- one-page PDF with checkboxes (no library: plain PDF 1.4 with built-in Helvetica)
+const pdfTxt = s => String(s).replace(/[–—]/g, "-").replace(/×/g, "x").replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/…/g, "...").replace(/≈/g, "~").replace(/·/g, "-").replace(/[^\x20-\x7E]/g, "").replace(/([\\()])/g, "\\$1");
+function pdfDoc(pages) { // pages: array of content-stream strings, Letter size
+  const objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"];
+  const kids = [];
+  for (const c of pages) { objs.push(`<< /Length ${c.length} >>\nstream\n${c}\nendstream`); const ci = objs.length;
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${ci} 0 R >>`); kids.push(`${objs.length} 0 R`); }
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${kids.length} >>`;
+  let out = "%PDF-1.4\n", offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("");
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return out;
+}
+function pdfWeekPage(g, gs, w, label) {
+  const lines = []; // [{type, text, size, bold, indent, box, checked}]
+  const ctx = planCtx(), equipTxt = [...ctx.equip].map(k => EQUIP[k]).join(", ") || "no equipment";
+  w.days.forEach((d, i) => {
+    lines.push({ text: `${DOW[i]} ${fmtD(d.date)} - ${d.title}${d.train || d.cardio ? ` (~${dayMinutes(d)} min, ~${dayKcal(d)} cal)` : ""}`, bold: true, box: d.train, checked: d.done, gap: 7 });
+    if (d.cardio) lines.push({ text: `${actFor(d.cardio.type).name}, ${d.cardio.min} min: ${d.cardio.how}`, indent: 1, box: !d.train, checked: d.done });
+    d.items.forEach(it => lines.push({ text: `${it.name} - ${it.text}${it.rest ? `, rest ${it.rest}` : ""}`, indent: 1, box: true, checked: d.done }));
+  });
+  const W = 612, M = 42, top = 792 - 42, bottom = 64;
+  for (let scale = 1; scale > 0.55; scale -= 0.05) {
+    const fs = 10 * scale, lh = fs * 1.35, maxw = (indent) => W - 2 * M - 16 - indent * 18;
+    const wrap = (t, size, ind) => { const words = t.split(" "), out = []; let cur = ""; for (const wd of words) { const tryS = cur ? cur + " " + wd : wd; if (tryS.length * size * 0.5 > maxw(ind) && cur) { out.push(cur); cur = wd; } else cur = tryS; } if (cur) out.push(cur); return out; };
+    let y = top - 60, ops = [];
+    const header = [`0.91 0.13 0.18 rg ${M} ${top - 22} 26 26 re f`, `1 1 1 rg BT /F2 18 Tf ${M + 6} ${top - 16} Td (M) Tj ET`, `0 0 0 rg BT /F2 16 Tf ${M + 36} ${top - 10} Td (${pdfTxt(`Momentum - ${g.name} plan`)}) Tj ET`,
+      `0.35 0.35 0.35 rg BT /F1 9 Tf ${M + 36} ${top - 23} Td (${pdfTxt(`${label} - ${fmtD(w.start)} to ${fmtD(addDays(w.start, 6))}, ${parseD(w.start).getFullYear()} - ${LEVELS[w.lvl]} level - ${gs.days} days/week - ${equipTxt}${lockMode() === "push" ? " - no pushing/overhead" : lockMode() === "all" ? " - no upper body" : ""}`)}) Tj ET`,
+      `BT /F1 9 Tf ${M} ${top - 42} Td (${pdfTxt(`Check off each workout as you finish it.  ${weekStats(w).done} of ${weekStats(w).total} done so far.`)}) Tj ET`, "0 0 0 rg 0 0 0 RG 0.7 w"];
+    ops.push(...header);
+    let fits = true;
+    for (const L of lines) {
+      const size = L.bold ? fs * 1.08 : fs, ind = L.indent || 0, parts = wrap(L.text, size, ind);
+      y -= (L.gap || 0) * scale;
+      parts.forEach((t, j) => {
+        y -= lh * (L.bold ? 1.05 : 1);
+        const x = M + ind * 18;
+        if (j === 0 && L.box) { const b = size * 0.85; ops.push(`${x} ${y - 1} ${b} ${b} re S`); if (L.checked) ops.push(`${x + 1.5} ${y + b * 0.45} m ${x + b * 0.4} ${y + 1} l ${x + b - 1} ${y + b - 1} l S`); }
+        ops.push(`BT /${L.bold ? "F2" : "F1"} ${size.toFixed(2)} Tf ${x + 16} ${y} Td (${pdfTxt(t)}) Tj ET`);
+      });
+      if (y < bottom) { fits = false; break; }
+    }
+    if (!fits) continue;
+    ops.push(`0.4 0.4 0.4 rg BT /F1 7 Tf ${M} 46 Td (${pdfTxt("General guidance, not medical advice. Check with your doctor before starting a new exercise program, and stop if something hurts.")}) Tj ET`,
+      `BT /F1 7 Tf ${M} 36 Td (${pdfTxt("Guidelines: CDC & AHA (150 min/week moderate activity, strength 2+ days/week); ACSM (8-12 reps for beginners, gradual progression; stretches held 10-30 s).")}) Tj ET`);
+    return ops.join("\n");
+  }
+  return "";
+}
+function planPdf(gid, scope) {
+  const g = CGOALS.find(x => x.id === gid), gs = coach().goals[gid], w = ensureWeeks(g, gs), pages = [pdfWeekPage(g, gs, w, scope === "program" ? "Week 1 of 4" : "This week")];
+  if (scope === "program") for (let k = 1; k < 4; k++) { const pw = buildWeek(g, gs, addDays(w.start, 7 * k), w.p + k, "Projected — adjusts to how your weeks go."); pages.push(pdfWeekPage(g, gs, pw, `Week ${k + 1} of 4 (projected)`)); }
+  const pdf = pdfDoc(pages), bytes = new Uint8Array(pdf.length); for (let i = 0; i < pdf.length; i++) bytes[i] = pdf.charCodeAt(i) & 255;
+  return { bytes, name: `momentum-${g.id}-${scope === "program" ? "4-week-program" : "week"}-${w.start}.pdf` };
+}
+async function sharePdf(gid, scope) {
+  const { bytes, name } = planPdf(gid, scope), file = new File([bytes], name, { type: "application/pdf" });
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch (err) { if (err && err.name === "AbortError") return; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 
 // =====================================================================
 // Weekly recap after the Friday weigh-in
@@ -2973,7 +3325,7 @@ function viewSettings() {
   const s = db.settings;
   const appUrl = location.origin + location.pathname;
   const ft = s.heightIn ? Math.floor(s.heightIn / 12) : "", inch = s.heightIn ? Math.round(s.heightIn % 12) : "";
-  const nUpper = s.liftGoals.filter(g => g.area === "upper").length;
+  const nUpper = s.liftGoals.filter(g => g.area === "upper" && blocks(exMove(g.ex, "upper"))).length;
   const backupAge = backupAgeDays();
   return `
   ${isStandalone() ? `<div class="banner"><b>Tip:</b> links opened by the Apple Health Shortcut land in Safari, which keeps separate data from this home-screen app. Have the Shortcut copy the link instead, then tap <b>Sync from Health</b> on Home.</div>` : ""}
@@ -3013,13 +3365,13 @@ function viewSettings() {
         <label>Daily burn override (cal)<input type="number" name="burnOverride" min="800" max="6000" value="${s.burnOverride ?? ""}" inputmode="numeric" placeholder="auto"></label>
       </div>
       <p class="faint" style="margin-top:-4px">Resting burn is estimated from your weight, height and age (male formula) unless you enter your own daily number; logged exercise is added on top.</p>
-      <label class="check"><input type="checkbox" name="shouldersCleared" ${s.shouldersCleared ? "checked" : ""}>Upper-body exercises unlocked (no injury, or my PT/doctor has cleared me)</label>
+      <label>Upper-body lock<select name="lockMode">${Object.entries(LOCK_LABEL).map(([k, l]) => `<option value="${k}"${lockMode() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
       <button class="btn block" style="margin-top:12px">Save these settings</button>
     </form>
   </div>
   <div class="card"><h2>Exercise goals <small>core &amp; strength</small></h2>
-    ${goalList(s.liftGoals.filter(g => g.area !== "upper" || s.shouldersCleared)) || `<p class="faint">No exercise goals yet.</p>`}
-    ${!s.shouldersCleared && nUpper ? `<p class="faint">🔒 ${nUpper} upper-body goal${nUpper === 1 ? "" : "s"} can be edited once you're cleared for upper-body work.</p>` : ""}
+    ${goalList(s.liftGoals.filter(g => g.area !== "upper" || !blocks(exMove(g.ex, "upper")))) || `<p class="faint">No exercise goals yet.</p>`}
+    ${nUpper ? `<p class="faint">🔒 ${nUpper} upper-body goal${nUpper === 1 ? "" : "s"} can be edited once you're cleared for upper-body work.</p>` : ""}
     <details style="margin-top:12px"><summary>Add a goal</summary>
       <form data-form="add" data-k="liftGoals">${specFields("liftGoals", { area: "lower", sets: 3 })}
         <p class="faint" style="margin-top:-4px">A goal is met by one logged entry with at least these sets and reps (and weight or hold time, if set).</p>
@@ -3027,7 +3379,7 @@ function viewSettings() {
   </div>
   <div class="card"><h2>My exercises</h2>
     <p class="faint" style="margin-top:0">Suggestions when you log, one per line. Anything new you type while logging is added here automatically.</p>
-    <form data-form="exlists">${Object.keys(AREAS).map(a => `<label>${AREAS[a]}${a === "upper" && !s.shouldersCleared ? " 🔒" : ""}<textarea name="${a}" rows="5">${esc(s.exercises[a].join("\n"))}</textarea></label>`).join("")}
+    <form data-form="exlists">${Object.keys(AREAS).map(a => `<label>${AREAS[a]}${a === "upper" && lockMode() !== "off" ? " 🔒" : ""}<textarea name="${a}" rows="5">${esc(s.exercises[a].join("\n"))}</textarea></label>`).join("")}
       <button class="btn secondary block">Save exercise lists</button></form>
   </div>
   <div class="card"><h2>Backup &amp; restore</h2>
@@ -3089,7 +3441,7 @@ const forms = {
     s.sex = f.get("sex") === "female" ? "female" : "male";
     s.weighDay = f.get("weighDay") != null ? +f.get("weighDay") : 5;
     s.goals = [...new Set(goals)].sort((a, b) => b - a);
-    s.shouldersCleared = f.get("injury") !== "yes";
+    s.shouldersCleared = f.get("injury") === "no"; if (!s.shouldersCleared) s.lockMode = f.get("injury"); s.lockModeSet = true;
     if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: sw, type: "other", note: "Starting weight", src: "manual" });
     s.setupDone = true; save(); current = "home";
     toast(s.name ? `Welcome, ${s.name}!` : "You're all set");
@@ -3119,9 +3471,9 @@ const forms = {
     for (const k of ["age", "burnOverride"]) s[k] = num(f.get(k)) || null;
     s.sex = f.get("sex") === "female" ? "female" : "male";
     if (f.get("weighDay") != null) s.weighDay = +f.get("weighDay");
-    const cleared = !!f.get("shouldersCleared");
+    const lm = f.get("lockMode") || lockMode(), cleared = lm === "off";
     if (cleared && !s.shouldersCleared) s.clearedDate = today();
-    s.shouldersCleared = cleared;
+    s.shouldersCleared = cleared; if (!cleared) s.lockMode = lm; s.lockModeSet = true;
     save(); toast("Settings saved");
   }
 };
@@ -3220,6 +3572,9 @@ document.addEventListener("click", e => {
   if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") { coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render(); window.scrollTo(0, 0); return; }
+  if (act === "planDone") { completeDay(el.dataset.g, el.dataset.w, +el.dataset.i); const d = coach().goals[el.dataset.g].weeks[el.dataset.w].days[+el.dataset.i]; toast(`Logged ${d.title.toLowerCase()} — ≈ ${dayKcal(d)} cal`); render(); return; }
+  if (act === "planUndo") { undoDay(el.dataset.g, el.dataset.w, +el.dataset.i); toast("Removed from your log"); render(); return; }
+  if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "scanStart") { startScan(); return; }
   if (act === "compAdd") { const d = $("#logComp"); if (d) { d.open = true; d.scrollIntoView({ block: "center", behavior: "smooth" }); const i = $("#logComp [name=bf]"); if (i) setTimeout(() => i.focus({ preventScroll: true }), 300); } return; }
