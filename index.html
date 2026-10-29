@@ -2639,6 +2639,7 @@ function intake(g) {
         <label>Norms for<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label></div>` : ""}
       <div class="row">
         <label>Days per week available<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === 3 ? " selected" : ""}>${d}</option>`).join("")}</select></label>
+        <label>How long per workout?<select name="minutes">${SESSION_MIN.map(m => `<option value="${m}"${m === (30) ? " selected" : ""}>${m}${m === 75 ? "+" : ""} min</option>`).join("")}</select></label>
         <label>Target date<input type="date" name="target" value="${addDays(today(), 84)}" min="${today()}"></label></div>
       ${equipFields()}
       <label>Other injuries or notes<textarea name="injuries" rows="2" placeholder="e.g. left shoulder — or leave blank"></textarea></label>
@@ -2678,6 +2679,7 @@ function goalDetail(g) {
     <div class="card"><h2>Plan settings</h2>
       <form data-form="coachPlan"><div class="row">
         <label>Days per week<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === gs.days ? " selected" : ""}>${d}</option>`).join("")}</select></label>
+        <label>How long per workout?<select name="minutes">${SESSION_MIN.map(m => `<option value="${m}"${m === (gs.minutes || 45) ? " selected" : ""}>${m}${m === 75 ? "+" : ""} min</option>`).join("")}</select></label>
         <label>Target date<input type="date" name="target" value="${gs.target || ""}"></label></div>
         ${equipFields()}
         <label>Other injuries or notes<textarea name="injuries" rows="2">${esc(gs.injuries || "")}</textarea></label>
@@ -2692,7 +2694,7 @@ const coachForms = {
     if (!s.sex) s.sex = "male";
     readEquip(f);
     const vals = readTests(g, f), level = levelFrom(vals);
-    coach().goals[g.id] = { started: today(), days: +f.get("days") || 3, target: f.get("target") || null, injuries: String(f.get("injuries") || "").trim(),
+    coach().goals[g.id] = { started: today(), days: +f.get("days") || 3, minutes: +f.get("minutes") || 30, target: f.get("target") || null, injuries: String(f.get("injuries") || "").trim(),
       stage: level + 1, unlockedAt: today(), tests: [{ date: today(), vals, level }] };
     save(); toast(`${LEVELS[level]} level — starting at step ${level + 1}`);
   },
@@ -2710,7 +2712,7 @@ const coachForms = {
   },
   coachPlan(f) {
     const gs = coach().goals[coachSel]; if (!gs) return;
-    gs.days = +f.get("days") || gs.days; gs.target = f.get("target") || null; gs.injuries = String(f.get("injuries") || "").trim();
+    gs.days = +f.get("days") || gs.days; gs.minutes = +f.get("minutes") || gs.minutes || 45; gs.target = f.get("target") || null; gs.injuries = String(f.get("injuries") || "").trim();
     readEquip(f);
     const g = CGOALS.find(x => x.id === coachSel); gs.weeks = gs.weeks || {};
     for (const k of Object.keys(gs.weeks)) if (k >= mondayOf(today())) rebuildWeek(g, gs, k);
@@ -2823,29 +2825,52 @@ const ROTATION = {
 };
 const DAY_PATTERN = { 1: [2], 2: [1, 4], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
 // One training session. Returns { title, cardio: {type, min, intensity, how}|null, items: [...], src: [...] }
-function session(kind, gid, lvl, stage, p, ctx, n) {
-  const vol = ctx.vol || 1, base = [20, 30, 40][lvl] + (stage - 1) * 5 + p * 5, M = Math.max(10, Math.round(Math.min(base, 75) * vol / 5) * 5);
-  const steady = (min, label) => { const types = cardioPick("steady", ctx), type = types[n % types.length];
-    return { type, min, intensity: "moderate", how: `${label || "Steady"} at a moderate pace — you can talk but not sing` }; };
-  if (kind === "steady") return { title: "Cardio", cardio: steady(M), items: [], src: ["cdc", "aha"] };
-  if (kind === "long") return { title: "Longer easy cardio", cardio: { ...steady(Math.min(Math.round(M * 1.4 / 5) * 5, 90), "Easy"), intensity: "easy", how: "Easy, comfortable pace — the long one of the week" }, items: [], src: ["aha"] };
-  if (kind === "intervals") {
-    const type = cardioPick("intervals", ctx)[0], rounds = Math.max(3, Math.round(Math.min([6, 8, 8][lvl] + p, 12) * vol)), hard = lvl === 2 ? 1 : 1, easy = lvl === 2 ? 1 : 2;
-    return { title: "Intervals", cardio: { type, min: 10 + rounds * (hard + easy), intensity: "hard", how: `5 min easy warm-up, then intervals: ${hard} min hard, ${easy} min easy × ${rounds}, then 5 min easy` }, items: [], src: ["aha"] };
+const SESSION_MIN = [20, 30, 45, 60, 75];
+const r5 = x => Math.max(10, Math.round(x / 5) * 5);
+// Trim a strength session to the time budget: drop a set from the biggest exercise first, then the last exercise
+function fitItems(items, budget) {
+  const used = () => items.reduce((a, it) => a + itemMin(it), 0);
+  while (used() > budget) {
+    const big = items.filter(i => !i.sec && (i.sets || 1) > 2).sort((x, y) => y.sets - x.sets || itemMin(y) - itemMin(x))[0];
+    if (big) { big.sets--; big.text = big.text.replace(/^\d+ ×/, `${big.sets} ×`); }
+    else if (items.length > 2) items.pop();
+    else break;
   }
-  if (kind === "easyrun") return { title: "Easy run", cardio: { type: "Running / jogging", min: M, intensity: "easy", how: lvl === 0 ? "Run/walk: 2 min jog, 1 min walk, repeat — easy enough to talk" : "Easy, conversational pace" }, items: [], src: ["cdc"] };
-  if (kind === "longrun") return { title: "Long run", cardio: { type: "Running / jogging", min: Math.min(M + 15, 90), intensity: "easy", how: "Slow and steady — the longest run of the week" }, items: [], src: ["aha"] };
-  if (kind === "tempo") { const t = Math.round((10 + lvl * 5 + p * 2) * vol); return { title: "Tempo run", cardio: { type: "Running / jogging", min: t + 15, intensity: "hard", how: `10 min easy, ${t} min comfortably hard, 5 min easy` }, items: [], src: ["aha"] }; }
-  if (kind === "intervalsRun") { const r = Math.max(3, Math.round(Math.min([4, 6, 8][lvl] + p, 10) * vol)); return { title: "Speed intervals", cardio: { type: "Running / jogging", min: 15 + r * 4, intensity: "hard", how: `10 min easy, then ${r} × 2 min at goal mile pace with 2 min walk, 5 min easy` }, items: [], src: ["aha"] }; }
-  if (kind === "rehab") return { title: "Rehab + easy movement", cardio: { ...steady(Math.min(15 + p * 5, 30), "Easy"), intensity: "easy", how: "Easy, low-impact — stop if pain rises above 3/10" },
-    items: [{ key: null, name: "Your PT's exercises", text: "as prescribed", rest: "", src: null }, ...strengthItems(STRENGTH_SLOTS.mobility, 0, 0, ctx).slice(0, 2)], src: ["acsmFlex"] };
-  const slots = STRENGTH_SLOTS[kind] || STRENGTH_SLOTS.full, items = strengthItems(slots, lvl, p, ctx);
+  return used();
+}
+// One training session sized to the workout length T (minutes, incl. warm-up and rest between sets)
+function session(kind, gid, lvl, stage, p, ctx, n) {
+  const vol = ctx.vol || 1, T = ctx.T || 45, avail = r5(T * vol);
+  const steady = (min, label) => { const types = cardioPick("steady", ctx), type = types[n % types.length];
+    return { type, min, intensity: "moderate", how: `${min >= 20 ? "First 5 min easy, then " : ""}${(label || "steady").toLowerCase()} at a moderate pace — you can talk but not sing` }; };
+  if (kind === "steady") return { title: "Cardio", cardio: steady(avail), items: [], src: ["cdc", "aha"] };
+  if (kind === "long") return { title: "Easy endurance cardio", cardio: { ...steady(avail), intensity: "easy", how: `${avail >= 20 ? "First 5 min easy, then " : ""}keep it easy and comfortable the whole way` }, items: [], src: ["aha"] };
+  if (kind === "intervals") {
+    const type = cardioPick("intervals", ctx)[0], hard = 1, easy = lvl === 2 ? 1 : 2;
+    const rounds = Math.max(3, Math.min(Math.min([6, 8, 8][lvl] + p, 12), Math.floor((avail - 10) / (hard + easy)))), extra = avail - 10 - rounds * (hard + easy);
+    return { title: "Intervals", cardio: { type, min: 10 + rounds * (hard + easy) + (extra >= 5 ? extra : 0), intensity: "hard",
+      how: `5 min easy warm-up, then intervals: ${hard} min hard, ${easy} min easy × ${rounds}${extra >= 5 ? `, then ${extra} min steady` : ""}, then 5 min easy` }, items: [], src: ["aha"] };
+  }
+  if (kind === "easyrun") return { title: "Easy run", cardio: { type: "Running / jogging", min: avail, intensity: "easy", how: lvl === 0 ? "Run/walk: 2 min jog, 1 min walk, repeat — easy enough to talk" : "First 5 min as a brisk walk, then an easy, conversational run" }, items: [], src: ["cdc"] };
+  if (kind === "longrun") return { title: "Long run", cardio: { type: "Running / jogging", min: avail, intensity: "easy", how: "Slow and steady — your longest run of the week" }, items: [], src: ["aha"] };
+  if (kind === "tempo") { const t = Math.max(5, Math.min(Math.round((10 + lvl * 5 + p * 2) * vol), avail - 15)); return { title: "Tempo run", cardio: { type: "Running / jogging", min: Math.max(avail, t + 15), intensity: "hard", how: `10 min easy, ${t} min comfortably hard, then easy for the rest` }, items: [], src: ["aha"] }; }
+  if (kind === "intervalsRun") { const r = Math.max(3, Math.min(Math.round(Math.min([4, 6, 8][lvl] + p, 10) * vol), Math.floor((avail - 15) / 4))); return { title: "Speed intervals", cardio: { type: "Running / jogging", min: 15 + r * 4, intensity: "hard", how: `10 min easy, then ${r} × 2 min at goal mile pace with 2 min walk, 5 min easy` }, items: [], src: ["aha"] }; }
+  if (kind === "rehab") {
+    const items = [{ key: null, name: "Your PT's exercises", text: "as prescribed (about 10–15 min)", rest: "", src: null, min: 12 }, ...strengthItems(STRENGTH_SLOTS.mobility, 0, 0, ctx).slice(0, 2)];
+    const left = avail - items.reduce((a, it) => a + itemMin(it), 0);
+    return { title: "Rehab + easy movement", cardio: left >= 10 ? { ...steady(Math.min(30, Math.floor(left / 5) * 5), "Easy"), intensity: "easy", how: "Easy, low-impact — stop if pain rises above 3/10", finisher: true } : null, items, src: ["acsmFlex"] };
+  }
+  const slots = STRENGTH_SLOTS[kind] || STRENGTH_SLOTS.full, warm = T <= 30 ? 5 : 8;
+  const items = strengthItems(slots, lvl, p, ctx), budget = avail - warm, used = fitItems(items, budget);
+  items.unshift({ key: null, name: "Warm-up", text: `${warm} min easy cardio + dynamic moves (leg swings, hip circles, bodyweight squats)`, rest: "", src: null, min: warm });
+  const left = budget - used;
+  const fin = left >= 10 ? { ...steady(Math.floor(left / 5) * 5, "Steady"), how: "Finisher: steady cardio at a moderate pace", finisher: true } : null;
   const titles = { full: "Strength — full body", fullB: "Strength — full body B", upper: ctx && blocks("push") ? "Strength — pulling" : "Strength — upper body", lower: "Strength — lower body",
     back: "Strength — back", pull: "Pull-up practice", core: "Core", legsRun: "Strength for runners", mobility: "Mobility", balance: "Balance" };
   const src = kind === "mobility" ? ["acsmFlex"] : kind === "core" || kind === "balance" ? [] : ["acsmRT", "cdc"];
-  return { title: titles[kind] || "Strength", cardio: null, items, src };
+  return { title: titles[kind] || "Strength", cardio: fin, items, src };
 }
-const itemMin = it => Math.round(((it.sets || 1) * ((it.sec || 40) / 60 + (/2 min/.test(it.rest) ? 2 : /90/.test(it.rest) ? 1.5 : 0.75)) * (it.perSide ? 1.5 : 1)));
+const itemMin = it => it.min != null ? it.min : Math.round(((it.sets || 1) * ((it.sec || 40) / 60 + (/2 min/.test(it.rest) ? 2 : /90/.test(it.rest) ? 1.5 : 0.75)) * (it.perSide ? 1.5 : 1)));
 const dayMinutes = d => (d.cardio ? d.cardio.min : 0) + d.items.reduce((a, it) => a + itemMin(it), 0);
 function dayKcal(d) {
   let k = d.cardio ? cardioCalc({ type: d.cardio.type, min: d.cardio.min, intensity: d.cardio.intensity }).kcal : 0;
@@ -2854,7 +2879,7 @@ function dayKcal(d) {
 }
 const mondayOf = d => { const x = parseD(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dstr(x); };
 function buildWeek(g, gs, start, p, note, tag = {}) {
-  const ctx = { ...planCtx(), vol: tag.deload ? 0.7 : 1 }, last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
+  const ctx = { ...planCtx(), vol: tag.deload ? 0.7 : 1, T: gs.minutes || 45 }, last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
   const trainIdx = DAY_PATTERN[D], rot = ROTATION[g.id] || ROTATION.fat, walkGoal = ["fat", "heart", "recomp", "injury"].includes(g.id);
   const days = [];
   for (let i = 0; i < 7; i++) {
@@ -3039,10 +3064,11 @@ function dayCard(gid, w, i, mode) { // mode: "edit" (current week) | "view" (pas
   else if (mode === "view" && d.train && !d.status) foot = `<div class="faint" style="margin-top:6px">Not logged</div>`;
   return `<div class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.status === "skipped" ? " skipped" : ""}${d.train ? "" : " rest"}">
     <div class="day-top"><div><b>${DOW[i]}</b> <span class="faint">${fmtD(d.date)}</span>${isToday ? ' <span class="tag red">Today</span>' : ""}</div>
-      ${d.train || d.cardio ? `<span class="faint">${mins ? `~${mins} min · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
+      ${d.train || d.cardio ? `<span class="faint">${mins ? `⏱ ~${mins} min · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
     <div class="day-title">${esc(d.title)}</div>
-    ${d.cardio ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}${d.src.length ? ` <span class="src-tag">${d.src.filter(x => x === "cdc" || x === "aha").map(x => x.toUpperCase()).join("/") || ""}</span>` : ""}</div>` : ""}
+    ${d.cardio && !d.cardio.finisher ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}${d.src.length ? ` <span class="src-tag">${d.src.filter(x => x === "cdc" || x === "aha").map(x => x.toUpperCase()).join("/") || ""}</span>` : ""}</div>` : ""}
     ${d.items.length ? `<ul class="day-items">${d.items.map(itemHtml).join("")}</ul>` : ""}
+    ${d.cardio && d.cardio.finisher ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}</div>` : ""}
     ${d.retest && mode !== "view" ? `<div class="banner" style="margin:10px 0 0">🎯 <b>Block retest</b> — redo your goal tests at the end of this week to set up the next block. <button type="button" class="btn secondary small" data-act="planRetest" data-g="${gid}" style="margin-top:8px">Open retest</button></div>` : ""}
     ${foot}</div>`;
 }
@@ -3063,6 +3089,34 @@ function summaryCard(g, gs, b, live) {
     ${nb ? `<p class="muted" style="margin:10px 0 0">${live ? "Next block (starts Monday): " : ""}${esc(nb.note)}</p>` : ""}
     ${!live ? `<button class="btn ghost small" data-act="planSummaryHide" data-g="${g.id}" style="margin-top:10px">Hide summary</button>` : ""}</div>`;
 }
+// Does a week meet the goal's guideline? (150 cardio min for fat/heart/recomp; 2 strength days for most goals)
+function planIssues(g, gs, w) {
+  const tr = w.days.filter(d => d.train), out = [];
+  const cardioMin = tr.reduce((a, d) => a + (d.cardio ? d.cardio.min : 0), 0), needC = { fat: 150, heart: 150, recomp: 150 }[g.id] || 0;
+  if (needC && cardioMin < needC) out.push(`This plan has about ${cardioMin} cardio minutes a week; the CDC/AHA guideline is at least ${needC}.`);
+  const sd = tr.filter(d => d.items.some(it => it.key) && !["mobility", "rehab"].includes(d.kind)).length;
+  if (!["injury", "mobility"].includes(g.id) && sd < 2) out.push(`Only ${sd} strength day${sd === 1 ? "" : "s"} fit${sd === 1 ? "s" : ""} in ${gs.days} day${gs.days === 1 ? "" : "s"} a week; CDC/AHA recommend muscle-strengthening on at least 2 days.`);
+  return out;
+}
+// Try the alternatives and suggest the smallest change that meets the guideline
+function planFit(g, gs, w) {
+  const T = gs.minutes || 45, D = gs.days || 3, trial = (days, minutes) => buildWeek(g, { ...gs, days, minutes }, w.start, w.p, "", { block: w.block, wk: w.wk });
+  const issues = planIssues(g, gs, w.deload ? trial(D, T) : w); if (!issues.length) return null;
+  const ok = (d, m) => !planIssues(g, { ...gs, days: d }, trial(d, m)).length;
+  const mins = SESSION_MIN.find(m => m > T && ok(D, m)), days = [5, 6, 7, 4, 3, 2].filter(d => d > D).sort((x, y) => x - y).find(d => ok(d, T));
+  const combos = [];
+  if (!mins && !days) for (let d = D + 1; d <= 7 && combos.length < 2; d++) { const m = SESSION_MIN.find(x => x >= T && ok(d, x)); if (m && !combos.some(c => c.m === m)) combos.push({ d, m }); }
+  return { issues, mins, days, combos };
+}
+function fitBanner(g, gs, w) {
+  const f = planFit(g, gs, w); if (!f) return "";
+  const tips = [f.days ? `${f.days} days a week` : "", f.mins ? `${f.mins}${f.mins >= 75 ? "+" : ""}-minute workouts` : "", ...f.combos.map(c => `${c.d} days a week at ${c.m} minutes`)].filter(Boolean);
+  return `<div class="banner warn" style="margin:12px 0 0">${f.issues.map(t => `<div style="margin-bottom:6px">${esc(t)}</div>`).join("")}
+    ${tips.length ? `<div style="margin-bottom:8px">To fit it, try ${tips.join(" or ")}.</div>` : `<div style="margin-bottom:8px">Even 7 days at 75 minutes doesn't quite reach it — that's fine; do what you can and count extra walks.</div>`}
+    <div class="btn-row">${f.days ? `<button class="btn secondary small" data-act="planFit" data-g="${g.id}" data-days="${f.days}">Use ${f.days} days</button>` : ""}
+      ${f.mins ? `<button class="btn secondary small" data-act="planFit" data-g="${g.id}" data-mins="${f.mins}">Use ${f.mins} min</button>` : ""}
+      ${f.combos.map(c => `<button class="btn secondary small" data-act="planFit" data-g="${g.id}" data-days="${c.d}" data-mins="${c.m}">Use ${c.d} days × ${c.m} min</button>`).join("")}</div></div>`;
+}
 function planCards(g, gs) {
   const w = ensureWeeks(g, gs), b = gs.blocks.find(x => x.n === w.block) || curBlock(gs), next = gs.weeks[addDays(w.start, 7)];
   const past = Object.keys(gs.weeks).filter(k => k < w.start).sort().reverse();
@@ -3075,7 +3129,8 @@ function planCards(g, gs) {
       ${w.deload ? `<span class="tag red">Recovery week · ~30% lighter</span>` : ""}
       ${weekProgress(w)}
       ${progressBar(`${bs.done} of ${bs.total} workouts done this block`, bs.done, bs.total)}
-      <p class="faint" style="margin:8px 0 0">${esc(w.note)} ${LEVELS[w.lvl]} level · step ${w.stage} · ${gs.days} day${gs.days === 1 ? "" : "s"}/week · ${esc(equipTxt)}${lockMode() !== "off" ? ` · ${lockMode() === "push" ? "no pushing/overhead" : "no upper body"}` : ""}.</p>
+      <p class="faint" style="margin:8px 0 0">${esc(w.note)} ${LEVELS[w.lvl]} level · step ${w.stage} · ${gs.days} day${gs.days === 1 ? "" : "s"}/week · ${gs.minutes || 45}${(gs.minutes || 45) >= 75 ? "+" : ""} min each · ${esc(equipTxt)}${lockMode() !== "off" ? ` · ${lockMode() === "push" ? "no pushing/overhead" : "no upper body"}` : ""}.</p>
+      ${fitBanner(g, gs, w)}
       <details id="blockov-${g.id}" class="block-ov"><summary>Block overview — all 4 weeks</summary>
         ${[0, 1, 2, 3].map(i => { const pw = projWeek(g, gs, b, i), st = weekStats(pw), isCur = pw.start === w.start, fut = pw.start > w.start;
           return `<details id="bw-${g.id}-${b.n}-${i}" class="bw${isCur ? " cur" : ""}"><summary><span><b>Week ${i + 1}</b> · ${weekLabel(i)} <span class="faint">${fmtD(pw.start)}–${fmtD(addDays(pw.start, 6))}</span></span>
@@ -3124,8 +3179,10 @@ function pdfWeekPage(g, gs, w, label) {
     lines.push({ text: `${DOW[i]} ${fmtD(d.date)} - ${d.title}${d.train || d.cardio ? ` (~${dayMinutes(d)} min, ~${dayKcal(d)} cal)` : ""}${d.status ? `  [${STATUS[d.status].replace(/^\W+ /, "")}${d.status === "early" && d.doneOn ? ` ${fmtD(d.doneOn)}` : ""}]` : ""}`, bold: true, box: d.train, checked: d.done, gap: 7 });
     if (d.note) lines.push({ text: `Note: ${d.note}`, indent: 1 });
     if (d.retest) lines.push({ text: "Block retest - redo your goal tests at the end of this week", indent: 1, box: true, checked: false });
-    if (d.cardio) lines.push({ text: `${actFor(d.cardio.type).name}, ${d.cardio.min} min: ${d.cardio.how}`, indent: 1, box: !d.train, checked: d.done });
+    const cl = d.cardio && { text: `${actFor(d.cardio.type).name}, ${d.cardio.min} min: ${d.cardio.how}`, indent: 1, box: !d.train || d.cardio.finisher, checked: d.done };
+    if (cl && !d.cardio.finisher) lines.push(cl);
     d.items.forEach(it => lines.push({ text: `${it.name} - ${it.text}${it.rest ? `, rest ${it.rest}` : ""}`, indent: 1, box: true, checked: d.done }));
+    if (cl && d.cardio.finisher) lines.push(cl);
   });
   const W = 612, M = 42, top = 792 - 42, bottom = 64;
   for (let scale = 1; scale > 0.55; scale -= 0.05) {
@@ -3134,7 +3191,7 @@ function pdfWeekPage(g, gs, w, label) {
     let y = top - 60, ops = [];
     const acc = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").split(",").map(v => (+v / 255).toFixed(3)).join(" ");
     const header = [`${acc} rg ${M} ${top - 22} 26 26 re f`, `0.06 0.07 0.08 rg BT /F2 18 Tf ${M + 6} ${top - 16} Td (M) Tj ET`, `0 0 0 rg BT /F2 16 Tf ${M + 36} ${top - 10} Td (${pdfTxt(`Momentum - ${g.name} plan`)}) Tj ET`,
-      `0.35 0.35 0.35 rg BT /F1 9 Tf ${M + 36} ${top - 23} Td (${pdfTxt(`${label} - ${fmtD(w.start)} to ${fmtD(addDays(w.start, 6))}, ${parseD(w.start).getFullYear()} - ${LEVELS[w.lvl]} level - ${gs.days} days/week - ${equipTxt}${lockMode() === "push" ? " - no pushing/overhead" : lockMode() === "all" ? " - no upper body" : ""}`)}) Tj ET`,
+      `0.35 0.35 0.35 rg BT /F1 9 Tf ${M + 36} ${top - 23} Td (${pdfTxt(`${label} - ${fmtD(w.start)} to ${fmtD(addDays(w.start, 6))}, ${parseD(w.start).getFullYear()} - ${LEVELS[w.lvl]} level - ${gs.days} days/week, ${gs.minutes || 45}${(gs.minutes || 45) >= 75 ? "+" : ""} min each - ${equipTxt}${lockMode() === "push" ? " - no pushing/overhead" : lockMode() === "all" ? " - no upper body" : ""}`)}) Tj ET`,
       `BT /F1 9 Tf ${M} ${top - 42} Td (${pdfTxt(`${w.block ? `Block ${w.block} - Week ${w.wk} of 4${w.deload ? " (recovery week, ~30% lighter)" : ""} - ` : ""}This week: ${weekStats(w).done} of ${weekStats(w).total} done${w.block && gs.blocks ? ` - Block: ${(() => { const bb = gs.blocks.find(x => x.n === w.block); if (!bb) return ""; const st = blockStats(g, gs, bb); return `${st.done} of ${st.total} done`; })()}` : ""}. Check off each workout as you finish it.`)}) Tj ET`, "0 0 0 rg 0 0 0 RG 0.7 w"];
     ops.push(...header);
     let fits = true;
@@ -3800,6 +3857,12 @@ document.addEventListener("click", e => {
   if (act === "planNote") { planNote = { g: el.dataset.g, w: el.dataset.w, i: +el.dataset.i, mode: el.dataset.m }; render(); const n = $("[data-plan-note]"); if (n) n.focus(); return; }
   if (act === "planNoteCancel") { planNote = null; render(); return; }
   if (act === "planUndo") { undoDay(el.dataset.g, el.dataset.w, +el.dataset.i); planNote = null; toast("Undone — removed from your log"); render(); return; }
+  if (act === "planFit") {
+    const gs = coach().goals[el.dataset.g], g = CGOALS.find(x => x.id === el.dataset.g); if (!gs) return;
+    if (el.dataset.days) gs.days = Math.min(7, +el.dataset.days); if (el.dataset.mins) gs.minutes = +el.dataset.mins;
+    for (const k of Object.keys(gs.weeks || {})) if (k >= mondayOf(today())) rebuildWeek(g, gs, k);
+    save(); toast(`Plan updated — ${gs.days} days a week, ${gs.minutes || 45} minutes each`); render(); return;
+  }
   if (act === "planRetest") { const d = document.getElementById("retest-" + el.dataset.g); if (d) { d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } return; }
   if (act === "planSummaryHide") { const gs = coach().goals[el.dataset.g]; if (gs) { gs.showSummary = null; save(); } render(); return; }
   if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
