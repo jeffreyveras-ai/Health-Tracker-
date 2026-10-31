@@ -73,6 +73,8 @@ html[data-theme="navy"] {
   --chart-grid: #34496B;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* keep jump-to targets clear of the sticky header */
+html { scroll-padding-top: calc(100px + env(safe-area-inset-top)); }
 html, body { margin: 0; }
 body.setup nav.tabs, body.setup header.top .icon-btn { display: none; }
 .streak { display: flex; align-items: center; gap: 14px; }
@@ -349,6 +351,15 @@ label[hidden] { display: none !important; }
 .photos figure { margin: 0; }
 .photos img { width: 100%; border-radius: 12px; display: block; background: var(--card-2); aspect-ratio: 3 / 2; object-fit: cover; }
 .photos figcaption { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-top: 4px; }
+.stepx { background: var(--card-2); border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+.stepx.now { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.stepx.done b { color: var(--ink-3); }
+.stepx.later b { color: var(--ink-2); }
+.stepx .bar { background: var(--card); }
+.task { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); margin-top: 8px; }
+.task .chk { flex: none; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line); display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #0F1114; }
+.task.done .chk { background: var(--good); box-shadow: none; }
+.task .btn { flex: none; }
 .ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
 .ladder div { background: var(--card-2); border-radius: 10px; padding: 8px 6px; font-size: 12px; color: var(--ink-3); text-align: center; line-height: 1.25; }
 .ladder span { display: block; font-family: var(--num); font-size: 20px; font-weight: 800; }
@@ -2624,7 +2635,7 @@ const CGOALS = [
     ["Gentle start", ["Superman 3×8, bird dog 2×10 per side, glute bridge 3×12.", "U:Light dumbbell rows 2×12 per side.", "2–3 days a week."], "Many back aches improve with gentle, regular movement."],
     ["Hinge and pull", ["Light Romanian deadlifts 3×10.", "U:Seated cable row 3×10 and face pulls 3×12.", "Walk daily."], "Hinge from the hips and keep your spine neutral."],
     ["Build strength", ["Deadlift or Romanian deadlift 3×8.", "U:Lat pulldown 3×10 and dumbbell rows 3×10.", "Superman holds 3 × 20 seconds."], "Pulling exercises balance out all the sitting and pushing we do."],
-    ["Strong back", ["Heavier hinges 3 × 6–8.", "U:Work toward pull-ups (see First Pull-Up).", "2–3 back sessions a week."], "Retest your back-extension hold monthly."]] },
+    ["Strong back", ["Heavier hinges 3 × 6–8.", "U:Work toward pull-ups (see Pull-Up Progress).", "2–3 back sessions a week."], "Retest your back-extension hold monthly."]] },
   { id: "upper", name: "Upper Body Strength", upper: 1, tests: ["pushups", "deadhang"], stages: [
     ["Foundations", ["Incline push-ups 3×8–12.", "Dumbbell rows 3×10 per side and lateral raises 2×12.", "2 days a week."], "Leave 2–3 reps in the tank while you learn the movements."],
     ["Build", ["Floor push-ups 3 sets, stopping 1–2 reps before failure.", "Dumbbell shoulder press 3×10 and lat pulldown 3×10.", "Bicep and hammer curls 2×12."], "Add weight when you hit the top of the rep range for all sets."],
@@ -2635,7 +2646,7 @@ const CGOALS = [
     ["Add load", ["Goblet squats 3×10 and lunges 2×8 per leg.", "Romanian deadlifts 3×10.", "Step-ups 2×10 per leg."], "Control the way down — about 2 seconds."],
     ["Strength", ["Smith machine or barbell squats 3×8.", "Deadlifts 3 × 6–8.", "Walking lunges 3×10 per leg."], "Rest 2–3 minutes between heavy sets."],
     ["Advanced", ["Heavier squats and deadlifts, 4 × 5–6.", "Split squats 3×8 per leg.", "2–3 lower-body days a week."], "Track your main lifts in the Strength log."]] },
-  { id: "pullup", name: "First Pull-Up", upper: 1, tests: ["deadhang", "halfreps", "pullups"], stages: [
+  { id: "pullup", name: "Pull-Up Progress", upper: 1, tests: ["deadhang", "halfreps", "pullups"], stages: [
     ["Grip and hang", ["Dead hang 3 × as long as you can (build to 30 seconds).", "Scapular pulls: hang and pull your shoulders down, 3×8.", "Lat pulldown 3×10, 3 days a week."], "A strong grip is the first limit for most people."],
     ["Negatives", ["Negative pull-ups 3×3, taking 3–5 seconds down.", "Assisted pull-ups 3×5.", "Dumbbell rows 3×10."], "Negatives make you sore — start with few reps."],
     ["Half reps", ["Half pull-ups from bent arms 3×5.", "Negatives 3×4, 5 seconds down.", "Lighter-band assisted pull-ups 3×5."], "Rest 2–3 days between pull-up sessions."],
@@ -2672,6 +2683,103 @@ const CGOALS = [
     ["Return", ["Back to full training once cleared.", "Keep 1–2 PT exercises in your warm-up.", "Unlock upper-body work in Settings only when cleared."], "Retest pain monthly and note what helps."]] }
 ];
 let coachSel = null;
+// What each step asks you to do, checked off from your logs since the step began.
+// weigh:n wake weigh-ins · meals:n days logged · protein:n days at goal · cardioWk:m minutes in one week · cardio:n / run:n sessions
+// strength:n / core:n days · plan:n planned workouts done · test:key:value a retest result · retest any retest
+const STEP_TASKS = {
+  fat: [["weigh:7", "meals:14", "protein:5"], ["cardioWk:150", "strength:4", "weigh:14"], ["cardioWk:200", "strength:6", "plan:9"], ["cardioWk:150", "strength:6", "weigh:14"]],
+  muscle: [["strength:4", "protein:7"], ["strength:9", "protein:14"], ["strength:12", "plan:12"], ["strength:12", "retest"]],
+  recomp: [["strength:6", "protein:7", "weigh:7"], ["strength:9", "cardioWk:150"], ["strength:12", "cardio:4"], ["strength:12", "cardioWk:150", "retest"]],
+  core: [["core:6"], ["core:9", "plan:6"], ["core:9", "plan:9"], ["core:6", "retest"]],
+  back: [["core:6", "plan:6"], ["strength:6", "cardio:5"], ["strength:9", "plan:9"], ["strength:9", "retest"]],
+  upper: [["strength:4"], ["strength:6", "plan:6"], ["strength:9", "plan:9"], ["strength:12", "retest"]],
+  lower: [["strength:6"], ["strength:6", "plan:6"], ["strength:9", "plan:9"], ["strength:9", "retest"]],
+  pullup: [["plan:6", "test:deadhang:30"], ["plan:6", "test:halfreps:3"], ["plan:6", "test:halfreps:5"], ["plan:6", "test:pullups:1"]],
+  mile: [["run:6", "strength:2"], ["run:6", "cardioWk:90"], ["run:9", "plan:9"], ["run:6", "retest"]],
+  race: [["run:6", "strength:2"], ["run:8", "cardioWk:120"], ["run:9", "plan:9"], ["run:6", "retest"]],
+  heart: [["cardio:6", "cardioWk:75"], ["cardioWk:150", "strength:4"], ["cardioWk:150", "plan:9"], ["cardioWk:150", "retest"]],
+  mobility: [["plan:6"], ["plan:8"], ["plan:10"], ["plan:8", "retest"]],
+  balance: [["plan:6"], ["plan:8"], ["plan:9"], ["plan:8", "retest"]],
+  injury: [["cardio:4", "plan:6"], ["plan:8", "cardio:6"], ["plan:9"], ["plan:9", "retest"]]
+};
+// Pull-Up Progress: if you can't do one yet, the steps build to the first rep; if you can, each step is the next rep target
+function goalStages(g, gs) {
+  if (g.id !== "pullup") return g.stages.map((st, i) => ({ name: st[0], tips: st[1], hint: st[2], tasks: STEP_TASKS[g.id][i] }));
+  const base = gs.pullBase != null ? gs.pullBase : latestVal({ tests: gs.tests.slice(0, 1) }, "pullups") || 0;
+  if (base < 1) return g.stages.map((st, i) => ({ name: st[0], tips: st[1], hint: st[2], tasks: STEP_TASKS.pullup[i] }));
+  const t = []; let m = base; for (let i = 0; i < 4; i++) { m = nextPull(m); t.push(m); }
+  return t.map(m => ({ name: `Reach ${m} pull-ups`, tasks: ["plan:6", `test:pullups:${m}`], hint: "Add a rep to your sets every week or two; retest your max when the sets feel easy.",
+    tips: [`Pull-up sets at about 60% of your best, 3–4 sets, 2–3 days a week.`, "Negatives 3 × 3 after your sets for extra volume.", "Rest 2–3 days between pull-up sessions."] }));
+}
+const countDays = (list, since, f = () => true) => new Set(list.filter(x => x.date >= since && x.date <= today() && f(x)).map(x => x.date)).size;
+const CARDIO_GO = `data-act="quick" data-go="fitness" data-fv="cardio" data-focus="cardioForm"`;
+function stepTask(code, g, gs, since) {
+  const [type, a, b] = code.split(":"), n = +a, s = db.settings;
+  const T = (label, c, n, go, btn, sub) => ({ code, label, c, n, done: c >= n, frac: n ? Math.min(1, c / n) : 0, go, btn, sub: sub || `${Math.min(c, n)} of ${n}` });
+  if (type === "weigh") return T("Weigh in each morning", countDays(db.weights, since, w => w.type === "wake"), n, `data-act="quick" data-go="weight" data-focus="logWeight"`, "Log weigh-in", `${Math.min(countDays(db.weights, since, w => w.type === "wake"), n)} of ${n} morning weigh-ins`);
+  if (type === "meals") { const c = countDays(db.meals, since); return T("Log what you eat", c, n, `data-tab="food"`, "Log food", `${Math.min(c, n)} of ${n} days logged`); }
+  if (type === "protein") { const c = [...new Set(db.meals.filter(m => m.date >= since).map(m => m.date))].filter(d => dayEnergy(d).protein >= s.proteinTarget).length;
+    return T(`Hit your protein goal (${s.proteinTarget} g)`, c, n, `data-tab="food"`, "Log food", `${Math.min(c, n)} of ${n} days`); }
+  if (type === "cardioWk") { let best = 0; for (let w = weekStart(since); w <= today(); w = addDays(w, 7)) best = Math.max(best, sumMin(db.cardio, w, addDays(w, 6)));
+    return T(`Reach ${n} cardio minutes in one week`, best, n, CARDIO_GO, "Log cardio", `best week: ${Math.min(best, n)} of ${n} min`); }
+  if (type === "cardio") { const c = db.cardio.filter(x => x.date >= since).length; return T(`Do ${n} cardio sessions`, c, n, CARDIO_GO, "Log cardio"); }
+  if (type === "run") { const c = db.cardio.filter(x => x.date >= since && actFor(x.type).mode === "run").length; return T(`Do ${n} runs`, c, n, CARDIO_GO, "Log run"); }
+  if (type === "strength") { const c = countDays(db.strength, since); return T(`Do ${n} strength sessions`, c, n, `data-act="quick" data-go="fitness" data-fv="strength" data-focus="strengthForm"`, "Log strength", `${Math.min(c, n)} of ${n} sessions`); }
+  if (type === "core") { const c = countDays(db.core, since); return T(`Do core work on ${n} days`, c, n, `data-act="quick" data-go="fitness" data-fv="strength" data-focus="coreForm"`, "Log core", `${Math.min(c, n)} of ${n} days`); }
+  if (type === "plan") { const c = Object.values(gs.weeks || {}).flatMap(w => w.days).filter(d => d.done && d.status !== "skipped" && (d.doneOn || d.date) >= since).length;
+    return T(`Finish ${n} planned workouts`, c, n, `data-act="stepPlan" data-g="${g.id}"`, "Today's workout", `${Math.min(c, n)} of ${n} done`); }
+  if (type === "test") { const t = CTESTS[a], v = +b, best = Math.max(0, ...gs.tests.map(x => x.vals[a]).filter(x => x != null));
+    return T(`${t.name.replace(/ in a row$/, "")}: ${testVal(a, v)}`, best, v, `data-act="stepRetest" data-g="${g.id}"`, "Log a test", `best so far: ${testVal(a, best)} of ${testVal(a, v)}`); }
+  const c = gs.tests.filter(x => x.date > since).length ? 1 : 0;
+  return T("Log a retest", c, 1, `data-act="stepRetest" data-g="${g.id}"`, "Retest", c ? "done" : "not yet");
+}
+const stepTasks = (g, gs, i) => (goalStages(g, gs)[i].tasks || []).map(c => stepTask(c, g, gs, gs.unlockedAt || gs.started));
+// Finishing every task of the current step unlocks the next one
+function checkStep(g, gs) {
+  if (gs.stage >= 4) return false;
+  const ts = stepTasks(g, gs, gs.stage - 1); if (!ts.length || !ts.every(t => t.done)) return false;
+  gs.stage++; gs.unlockedAt = today(); save();
+  setTimeout(() => { toast(`Step ${gs.stage} unlocked 🎉`); confetti(); }, 400);
+  return true;
+}
+let stepRetestOpen = null, dayRetestOpen = null, planReady = null;
+function retestForm(g, gs, from) {
+  const last = gs.tests[gs.tests.length - 1];
+  return `<form data-form="coachRetest" style="margin-top:12px"><input type="hidden" name="from" value="${from}">${testInputs(g, last.vals)}<button class="btn block">Save test</button></form>`;
+}
+const tipList = tips => tips.filter(x => !x.startsWith("U:") || lockMode() === "off").map(x => x.replace(/^U:/, ""));
+function stepsCard(g, gs) {
+  const st = goalStages(g, gs), cur = gs.stage - 1, due = nextRetest(gs);
+  const daysLeft = gs.target ? Math.round((parseD(gs.target) - parseD(today())) / 864e5) : null;
+  const taskRow = t => `<div class="task${t.done ? " done" : ""}"><span class="chk" aria-hidden="true">${t.done ? "✓" : ""}</span>
+      <div class="grow" style="flex:1;min-width:0"><b>${esc(t.label)}</b><div class="faint">${esc(t.sub)}${t.done ? " ✓" : ""}</div>
+        <div class="bar ${t.done ? "good" : ""}" style="margin-top:6px"><span style="width:${Math.round(t.frac * 100)}%"></span></div></div>
+      ${t.done ? "" : `<button type="button" class="btn secondary small" ${t.go}>${esc(t.btn)}</button>`}</div>`;
+  const cards = st.map((x, i) => {
+    if (i < cur) return `<div class="stepx done"><b>✓ Step ${i + 1}: ${esc(x.name)}</b></div>`;
+    if (i === cur) { const ts = stepTasks(g, gs, i);
+      return `<div class="stepx now"><div class="faint" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:12px">You are here · Step ${i + 1} of 4</div>
+        <b style="font-size:18px">${esc(x.name)}</b>
+        ${ts.map(taskRow).join("")}
+        ${stepRetestOpen === g.id ? retestForm(g, gs, "steps") : ""}
+        <ul class="tips faint" style="margin:10px 0 0;padding-left:18px">${tipList(x.tips).map(t => `<li>${esc(t)}</li>`).join("")}</ul>
+        <p class="faint" style="margin:6px 0 0">💡 ${esc(x.hint)}</p></div>`; }
+    if (i === cur + 1) { const ts = stepTasks(g, gs, cur), left = ts.filter(t => !t.done), fr = ts.length ? ts.reduce((a, t) => a + t.frac, 0) / ts.length : 0;
+      return `<div class="stepx later"><b>🔒 Step ${i + 1}: ${esc(x.name)}</b>
+        <div class="faint" style="margin-top:4px">Unlocks when you finish step ${cur + 1}: ${ts.length - left.length} of ${ts.length} task${ts.length === 1 ? "" : "s"} done${left.length ? ` — next: ${esc(left[0].label.toLowerCase())}, ${esc(left[0].sub)}` : ""}.</div>
+        <div class="bar" style="margin-top:6px"><span style="width:${Math.round(fr * 100)}%"></span></div>
+        <div class="faint" style="margin-top:6px;font-size:12px">Or unlock it early with your monthly retest ${today() >= due ? "— <b>due now</b>" : `on ${fmtD(due)}`}.</div></div>`; }
+    return `<div class="stepx later"><b>🔒 Step ${i + 1}: ${esc(x.name)}</b><div class="faint" style="margin-top:4px">Unlocks after step ${i}.</div></div>`;
+  }).join("");
+  const pullDone = g.id === "pullup" && gs.stage === 4 && pullBest(gs) >= 1 && (gs.pullBase == null || gs.pullBase < 1) && stepTasks(g, gs, 3).every(t => t.done);
+  return `<div class="card" id="steps-${g.id}"><h2>${esc(g.name)} <small>Step ${gs.stage} of 4</small></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="tag">${gs.days} day${gs.days === 1 ? "" : "s"}/week</span>${daysLeft != null ? `<span class="tag">${daysLeft >= 0 ? `${Math.ceil(daysLeft / 7)} weeks to ${fmtD(gs.target)}` : `target was ${fmtD(gs.target)}`}</span>` : ""}</div>
+    <div class="ladder">${st.map((x, i) => `<div class="${i < cur ? "done" : i === cur ? "now" : ""}"><span>${i < cur ? "✓" : i + 1}</span>${esc(x.name)}</div>`).join("")}</div>
+    ${cards}
+    ${pullDone ? `<div class="banner" style="margin-top:12px">🎉 <b>You can do a full pull-up.</b> Switch to rep targets based on your best of ${pullBest(gs)}. <button type="button" class="btn small" data-act="pullReps" data-g="${g.id}" style="margin-top:8px">Set rep targets</button></div>` : ""}
+    ${gs.injuries ? `<p class="faint" style="margin-top:10px">Your limits: ${esc(gs.injuries)} — skip or modify anything that aggravates them.</p>` : ""}
+  </div>`;
+}
 const coach = () => { const s = db.settings; if (!s.coach || typeof s.coach !== "object") s.coach = { goals: {} }; if (!s.coach.goals) s.coach.goals = {}; return s.coach; };
 const goalLocked = g => !!g.upper && blocks("pull");
 const goalTests = g => g.tests.filter(k => !(CTESTS[k].upper && blocks(CTESTS[k].mv || "push")));
@@ -2682,10 +2790,17 @@ function levelFrom(vals) {
   return ls.length ? Math.floor(ls.reduce((a, b) => a + b, 0) / ls.length) : 0;
 }
 const nextRetest = gs => addDays(gs.unlockedAt || gs.started, 28);
+const latestVal = (gs, k) => { const t = [...gs.tests].reverse().find(x => x.vals[k] != null); return t ? t.vals[k] : null; };
+const pullBest = gs => latestVal(gs, "pullups") || 0;
+// Pull-up rep milestones: the next target is the first one above your current max (5 → 8 → 12 …)
+const PULL_STEPS = [1, 3, 5, 8, 12, 15, 20, 25, 30];
+const nextPull = v => PULL_STEPS.find(m => m > v) || Math.ceil((v + 5) / 5) * 5;
 // One test's standing: level, the next level's target, how far to go, and progress toward it (0–1)
 function testStanding(k, v) {
   const s = db.settings, t = CTESTS[k], [b, st] = t.cut(s.age, s.sex), lv = testLevel(k, v, s.age, s.sex);
   if (lv == null) return null;
+  if (k === "pullups" && v >= 1) { const target = nextPull(v), prev = [...PULL_STEPS].reverse().find(m => m <= v) || 0;
+    return { lv, target, gap: target - v, frac: Math.max(0, Math.min(1, (v - prev) / (target - prev))) }; }
   const hi = t.dir === "hi", target = lv === 0 ? b : lv === 1 ? st : null;
   const gap = target == null ? 0 : Math.abs(target - v);
   const frac = lv === 2 ? 1 : lv === 1 ? (v - b) / (st - b)
@@ -2737,7 +2852,7 @@ function viewCoach() {
       <p class="muted">This goal is built on upper-body exercises, which stay locked until your PT or doctor clears you.</p>
       <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`
     : c.goals[g.id] ? "" : intake(g);
-  else if (active.length) body = active.map(g => { const gs = c.goals[g.id], last = gs.tests[gs.tests.length - 1];
+  else if (active.length) body = active.map(g => { const gs = c.goals[g.id], last = gs.tests[gs.tests.length - 1]; if (!goalLocked(g)) checkStep(g, gs);
       return `<button class="tile" data-act="coachSel" data-id="${g.id}" style="margin-bottom:12px"><div class="label">${esc(g.name)}</div>
         ${(() => { if (goalLocked(g)) return `<div class="sub">🔒 locked</div>`; const w = ensureWeeks(g, gs), st = weekStats(w), td = w.days.find(d => d.date === today());
           return `<div class="value n" style="font-size:28px">${st.done}<small>/ ${st.total} done this week</small></div>
@@ -2746,7 +2861,7 @@ function viewCoach() {
   else body = `<div class="card"><h2>How Coach works</h2><ol class="tips" style="padding-left:20px;margin:0">
       <li>Pick a goal above and answer a short intake with a few simple tests.</li>
       <li>Your results place you at <b>Beginner</b>, <b>Building</b> or <b>Strong</b> using published age-based norms where they exist (sources shown with each goal).</li>
-      <li>You get a 4-step plan starting at your level. Retest once a month to unlock the next step.</li></ol></div>`;
+      <li>You get a 4-step plan starting at your level. Each step lists what to do; it checks items off from your logs and unlocks the next step when they're done (or with your monthly retest).</li></ol></div>`;
   const pick = `<div class="card"><h2>Pick a goal <small>${active.length} active</small></h2>${chips}</div>`;
   if (g && !goalLocked(g) && c.goals[g.id]) return SAFETY + goalDetail(g, pick);
   return `${SAFETY}${pick}${body}`;
@@ -2766,7 +2881,7 @@ function readEquip(f) {
 }
 function intake(g) {
   const s = db.settings;
-  return `<div class="card hero"><h2>${esc(g.name)} <small>intake</small></h2>
+  return `<div class="card hero" id="intake"><h2>${esc(g.name)} <small>intake</small></h2>
     <form data-form="coachStart">
       ${!s.age || !s.sex ? `<div class="row">
         <label>Age<input type="number" name="age" min="13" max="100" value="${s.age ?? ""}" inputmode="numeric" required></label>
@@ -2785,23 +2900,16 @@ function intake(g) {
     </form></div>`;
 }
 function goalDetail(g, pick) {
-  const s = db.settings, gs = coach().goals[g.id], last = gs.tests[gs.tests.length - 1], due = nextRetest(gs), canUnlock = today() >= due;
-  const daysLeft = gs.target ? Math.round((parseD(gs.target) - parseD(today())) / 864e5) : null;
+  const s = db.settings, gs = coach().goals[g.id];
+  checkStep(g, gs);
   const srcs = [...new Set(goalTests(g).map(k => CTESTS[k].src))];
   const p = planParts(g, gs);
   return `${levelCard(g, gs)}
     ${p.week}
-    <div class="card"><h2>${esc(g.name)} <small>${gs.days} day${gs.days === 1 ? "" : "s"}/week</small></h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="tag">Step ${gs.stage} of 4</span>${daysLeft != null ? `<span class="tag">${daysLeft >= 0 ? `${Math.ceil(daysLeft / 7)} weeks to ${fmtD(gs.target)}` : `target was ${fmtD(gs.target)}`}</span>` : ""}</div>
-      <div class="ladder">${g.stages.map((st, i) => `<div class="${i + 1 < gs.stage ? "done" : i + 1 === gs.stage ? "now" : ""}"><span>${i + 1 < gs.stage ? "✓" : i + 1}</span>${esc(st[0])}</div>`).join("")}</div>
-      <p class="muted" style="margin:12px 0 0"><b>Step ${gs.stage}: ${esc(g.stages[gs.stage - 1][0])}.</b> 💡 ${esc(g.stages[gs.stage - 1][2])}</p>
-      ${gs.injuries ? `<p class="faint" style="margin-top:8px">Your limits: ${esc(gs.injuries)} — skip or modify anything that aggravates them.</p>` : ""}
-      ${gs.stage < 4 ? `<p class="faint" style="margin-top:10px">🔒 Step ${gs.stage + 1} (${esc(g.stages[gs.stage][0])}) unlocks with your monthly retest ${canUnlock ? "— <b>you can retest now</b>" : `on ${fmtD(due)}`}.</p>` : `<p class="faint" style="margin-top:10px">You've reached the final step. Keep retesting monthly to track progress.</p>`}
-    </div>
+    ${stepsCard(g, gs)}
     ${pick}
     ${p.past}
-    <div class="card"><h2>Plan settings</h2>
+    <div class="card" id="settings-${g.id}"><h2>Plan settings</h2>
       <form data-form="coachPlan"><div class="row">
         <label>Days per week<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === gs.days ? " selected" : ""}>${d}</option>`).join("")}</select></label>
         <label>How long per workout?<select name="minutes">${SESSION_MIN.map(m => `<option value="${m}"${m === (gs.minutes || 45) ? " selected" : ""}>${m}${m === 75 ? "+" : ""} min</option>`).join("")}</select></label>
@@ -2830,9 +2938,22 @@ const coachForms = {
     const vals = readTests(g, f), level = levelFrom(vals);
     coach().goals[g.id] = { started: today(), days: +f.get("days") || 3, minutes: +f.get("minutes") || 30, target: f.get("target") || null, injuries: String(f.get("injuries") || "").trim(),
       stage: level + 1, unlockedAt: today(), tests: [{ date: today(), vals, level }] };
-    save(); toast(`${LEVELS[level]} level — starting at step ${level + 1}`);
+    // Pull-Up Progress: rep targets start from your current max at step 1
+    if (g.id === "pullup" && vals.pullups >= 1) Object.assign(coach().goals[g.id], { stage: 1, pullBase: vals.pullups });
+    save(); planReady = g.id; render();
+    const pc = document.getElementById("plan-" + g.id); if (pc) pc.scrollIntoView({ block: "start", behavior: "smooth" });
+    setTimeout(() => { const b = $("#planReady"); if (b) { b.style.opacity = "0"; setTimeout(() => { planReady = null; b.remove(); }, 700); } }, 4000);
+    return false;
   },
   coachRetest(f) {
+    const r = coachForms.saveRetest(f), g = CGOALS.find(x => x.id === coachSel); if (!g) return;
+    stepRetestOpen = null; dayRetestOpen = null; render();
+    // next step is below: the step list after a step unlock or a test from the steps card, otherwise this week's plan
+    const to = document.getElementById((r === "unlocked" || f.get("from") === "steps" ? "steps-" : "plan-") + g.id);
+    if (to && f.get("from") !== "day") to.scrollIntoView({ block: "start", behavior: "smooth" });
+    return false;
+  },
+  saveRetest(f) {
     const g = CGOALS.find(x => x.id === coachSel), gs = g && coach().goals[g.id]; if (!gs) return;
     const vals = readTests(g, f), level = levelFrom(vals);
     gs.tests.push({ date: today(), vals, level });
@@ -2840,9 +2961,10 @@ const coachForms = {
     if (bk && blockRetest(gs, bk)) { const nx = planNext(g, gs, bk); setTimeout(() => toast(`Retest saved — ${{ harder: "next block starts a notch harder", same: "next block keeps the same difficulty", easier: "next block eases back a little" }[nx.outcome]}`), 1200); }
     if (today() >= nextRetest(gs) && gs.stage < 4) {
       gs.stage = Math.min(4, gs.stage + 1); gs.unlockedAt = today();
-      save(); toast(`Step ${gs.stage} unlocked 🎉`); confetti(); return;
+      save(); toast(`Step ${gs.stage} unlocked 🎉`); confetti(); return "unlocked";
     }
-    save(); toast(gs.stage < 4 ? `Saved — the next step unlocks ${fmtD(nextRetest(gs))}` : "Retest saved");
+    save(); if (checkStep(g, gs)) return "unlocked";
+    toast("Test saved");
   },
   coachPlan(f) {
     const gs = coach().goals[coachSel]; if (!gs) return;
@@ -2887,7 +3009,7 @@ function exOk(key, ctx) {
 }
 const firstOk = (keys, ctx, used) => keys.find(k => exOk(k, ctx) && !used.has(k));
 // Strength dose by level (Beginner/Building/Strong) and progression step p
-function dose(key, lvl, p, vol = 1) {
+function dose(key, lvl, p, vol = 1, ctx = {}) {
   const name = GUIDE.find(g => g.key === key).name;
   const hold = { plank: [20, 40, 60], sideplank: [15, 30, 45], hang: [10, 20, 30], squathold: [20, 45, 60], onelegstand: [20, 30, 40], hipflexor: [30, 30, 45] }[key];
   if (hold) {
@@ -2897,6 +3019,8 @@ function dose(key, lvl, p, vol = 1) {
   }
   const s3 = Math.max(2, Math.round(3 * vol));
   if (key === "negpullup") { const reps = Math.min(3 + p, 5); return { key, name, sets: s3, reps, text: `${s3} × ${reps}, 3–5 s down`, rest: "2 min", src: null }; }
+  if (key === "pullup" && ctx.pullMax >= 1) { const sets = Math.max(3, Math.round(4 * vol)), reps = Math.max(1, Math.round(ctx.pullMax * 0.6)) + Math.floor(p / 2);
+    return { key, name, sets, reps, text: `${sets} × ${reps} (about 60% of your best of ${ctx.pullMax}; next target ${nextPull(ctx.pullMax)})`, rest: "2 min", src: null }; }
   if (key === "pullup") { const reps = Math.min(1 + p, 6); return { key, name, sets: s3, reps, text: `${s3} × ${reps}${reps < 3 ? " (or as many as you can)" : ""}`, rest: "2 min", src: null }; }
   const core = ["deadbug", "birddog", "crunch", "superman"].includes(key), side = ["deadbug", "birddog", "lunge", "dbrow"].includes(key);
   const base = core ? [8, 10, 12][lvl] : [12, 10, 8][lvl];
@@ -2917,24 +3041,27 @@ const SLOT_PREF = {
   core2: () => ["sideplank", "crunch", "deadbug", "plank", "superman"],
   back: () => ["superman", "birddog"],
   calf: () => ["calf"],
-  hang: () => ["hang"], pullprog: lvl => lvl === 0 ? ["asspullup", "pulldown", "dbrow"] : lvl === 1 ? ["negpullup", "asspullup", "pulldown"] : ["pullup", "negpullup"],
+  hang: () => ["hang"],
+  // can't do one yet → negatives and assisted pull-ups; can → pull-up sets plus negatives for extra volume
+  pullprog: (lvl, ctx) => ctx && ctx.pullMax >= 1 ? ["pullup", "negpullup", "asspullup", "pulldown"] : ["negpullup", "asspullup", "pulldown", "dbrow"],
+  pullprog2: (lvl, ctx) => ctx && ctx.pullMax >= 1 ? ["negpullup", "asspullup", "pulldown", "dbrow"] : ["asspullup", "pulldown", "dbrow"],
   mob: () => ["hipflexor", "squathold", "bridge"], bal: () => ["onelegstand", "calf", "bridge"]
 };
 const STRENGTH_SLOTS = {
   full: ["legs", "pull", "push", "hinge", "core"], fullB: ["hinge", "pull2", "legs2", "arms", "core2"],
   upper: ["pull", "push", "pull2", "push2", "arms"], lower: ["legs", "hinge", "legs2", "calf", "core"],
-  back: ["pull", "hinge", "back", "pull2", "core"], pull: ["hang", "pullprog", "pull", "arms", "core"],
+  back: ["pull", "hinge", "back", "pull2", "core"], pull: ["pullprog", "pullprog2", "hang", "pull", "core"],
   core: ["core", "core2", "back", "core"], legsRun: ["legs", "legs2", "calf", "hinge", "core"],
   mobility: ["mob", "mob", "mob"], balance: ["bal", "bal", "legs", "core"]
 };
 function strengthItems(slots, lvl, p, ctx) {
   const used = new Set(), items = [];
   for (const sl of slots) {
-    let k = firstOk(SLOT_PREF[sl](lvl), ctx, used);
+    let k = firstOk(SLOT_PREF[sl](lvl, ctx), ctx, used);
     // blocked pushes get swapped for pulling or core work
     if (!k && /push/.test(sl)) k = firstOk([...SLOT_PREF.pull2(), ...SLOT_PREF.core2()], ctx, used);
     if (!k) continue;
-    used.add(k); items.push(dose(k, lvl, p, ctx.vol || 1));
+    used.add(k); items.push(dose(k, lvl, p, ctx.vol || 1, ctx));
   }
   if (slots === STRENGTH_SLOTS.mobility) items.push({ key: null, name: "Hamstring stretch", sets: 2, sec: 30, text: "2 × 30 s each side", rest: "", src: "acsmFlex" });
   if (slots === STRENGTH_SLOTS.balance) items.push({ key: null, name: "Heel-to-toe walk", sets: 2, reps: 10, text: "2 × 10 steps, near support", rest: "", src: null });
@@ -3013,7 +3140,7 @@ function dayKcal(d) {
 }
 const mondayOf = d => { const x = parseD(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dstr(x); };
 function buildWeek(g, gs, start, p, note, tag = {}) {
-  const ctx = { ...planCtx(), vol: tag.deload ? 0.7 : 1, T: gs.minutes || 45 }, last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
+  const ctx = { ...planCtx(), vol: tag.deload ? 0.7 : 1, T: gs.minutes || 45, pullMax: pullBest(gs) }, last = gs.tests[gs.tests.length - 1], lvl = last ? last.level : 0, D = Math.max(1, Math.min(7, gs.days || 3));
   const trainIdx = DAY_PATTERN[D], rot = ROTATION[g.id] || ROTATION.fat, walkGoal = ["fat", "heart", "recomp", "injury"].includes(g.id);
   const days = [];
   for (let i = 0; i < 7; i++) {
@@ -3196,14 +3323,15 @@ function dayCard(gid, w, i, mode) { // mode: "edit" (current week) | "view" (pas
     : `<button type="button" class="btn secondary small block" data-act="planMark" data-m="done" ${ref} style="margin-top:10px">✓ Walked</button>`;
   else if (mode === "locked" && d.train) foot = `<div class="faint" style="margin-top:6px">🔒 Unlocks when this week starts</div>`;
   else if (mode === "view" && d.train && !d.status) foot = `<div class="faint" style="margin-top:6px">Not logged</div>`;
-  return `<div class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.status === "skipped" ? " skipped" : ""}${d.train ? "" : " rest"}">
+  return `<div id="day-${gid}-${w.start}-${i}" class="day-card${isToday ? " today" : ""}${d.done ? " done" : ""}${d.status === "skipped" ? " skipped" : ""}${d.train ? "" : " rest"}">
     <div class="day-top"><div><b>${DOW[i]}</b> <span class="faint">${fmtD(d.date)}</span>${isToday ? ' <span class="tag red">Today</span>' : ""}</div>
       ${d.train || d.cardio ? `<span class="faint">${mins ? `⏱ ~${mins} min · ≈ ${dayKcal(d)} cal` : ""}</span>` : ""}</div>
     <div class="day-title">${esc(d.title)}</div>
     ${d.cardio && !d.cardio.finisher ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}${d.src.length ? ` <span class="src-tag">${d.src.filter(x => x === "cdc" || x === "aha").map(x => x.toUpperCase()).join("/") || ""}</span>` : ""}</div>` : ""}
     ${d.items.length ? `<ul class="day-items">${d.items.map(itemHtml).join("")}</ul>` : ""}
     ${d.cardio && d.cardio.finisher ? `<div class="day-cardio">🏃 <b>${esc(actFor(d.cardio.type).name)}</b>, ${d.cardio.min} min — ${esc(d.cardio.how)}</div>` : ""}
-    ${d.retest && mode !== "view" ? `<div class="banner" style="margin:10px 0 0">🎯 <b>Block retest</b> — redo your goal tests at the end of this week to set up the next block. <button type="button" class="btn secondary small" data-act="planRetest" data-g="${gid}" style="margin-top:8px">Open retest</button></div>` : ""}
+    ${d.retest && mode !== "view" ? `<div class="banner" style="margin:10px 0 0">🎯 <b>Block retest</b> — redo your goal tests at the end of this week to set up the next block.
+      ${dayRetestOpen === gid && mode === "edit" ? retestForm(CGOALS.find(x => x.id === gid), coach().goals[gid], "day") : `<button type="button" class="btn secondary small" data-act="planRetest" data-g="${gid}" style="margin-top:8px">Log retest</button>`}</div>` : ""}
     ${foot}</div>`;
 }
 const progressBar = (label, done, total) => `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px"><b>${label}</b><span class="faint">${total ? Math.round(done / total * 100) : 0}%</span></div>
@@ -3260,7 +3388,10 @@ function planParts(g, gs) {
   const weekLabel = i => i === 3 ? "Recovery + retest" : `Build ${i + 1}`;
   const closedBlocks = gs.blocks.filter(x => x.closed);
   const week = `${lastClosed ? summaryCard(g, gs, lastClosed, false) : ""}
-    <div class="card hero"><h2>Block ${b.n} · Week ${w.wk} of 4 <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
+    <div class="card hero" id="plan-${g.id}"><h2>Block ${b.n} · Week ${w.wk} of 4 <small>${fmtD(w.start)} – ${fmtD(addDays(w.start, 6))}</small></h2>
+      ${planReady === g.id ? `<div class="banner" id="planReady" style="transition:opacity .6s">✅ <b>Your plan is ready.</b> ${LEVELS[w.lvl]} level — starting at step ${gs.stage} of 4. Today's workout is first.</div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><b>Step ${gs.stage} of 4 · ${esc(goalStages(g, gs)[gs.stage - 1].name)}</b>
+        <button type="button" class="link" data-act="editPlan" data-g="${g.id}" style="font-size:13px;white-space:nowrap">Edit plan settings</button></div>
       ${w.deload ? `<span class="tag red">Recovery week · ~30% lighter</span>` : ""}
       ${weekProgress(w)}
       ${progressBar(`${bs.done} of ${bs.total} workouts done this block`, bs.done, bs.total)}
@@ -3273,7 +3404,9 @@ function planParts(g, gs) {
             <p class="faint" style="margin:0 0 6px">${fut ? "Projected — it adjusts to how the weeks before it go. " : ""}${esc(pw.note)}</p>
             ${isCur ? `<p class="faint" style="margin:0">This is the current week — check workouts off in the list below.</p>` : `<div class="days">${pw.days.map((_, j) => dayCard(g.id, pw, j, fut ? "locked" : "view")).join("")}</div>`}</details>`; }).join("")}
       </details>
-      <div class="days">${w.days.map((_, i) => dayCard(g.id, w, i, "edit")).join("")}</div>
+      ${(() => { const ti = w.days.findIndex(d => d.date === today()), up = ti < 0 ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6].slice(ti), early = ti < 0 ? [] : [0, 1, 2, 3, 4, 5, 6].slice(0, ti);
+        return `<div class="days">${up.map(i => dayCard(g.id, w, i, "edit")).join("")}</div>
+          ${early.length ? `<h4 style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:16px 0 4px">Earlier this week</h4><div class="days">${early.map(i => dayCard(g.id, w, i, "edit")).join("")}</div>` : ""}`; })()}
       <div class="btn-row" style="margin-top:12px"><button class="btn secondary small" data-act="planPdf" data-g="${g.id}" data-scope="week" style="flex:1">⬇ This week (PDF)</button>
         <button class="btn ghost small" data-act="planPdf" data-g="${g.id}" data-scope="program" style="flex:1">⬇ Whole block (PDF)</button></div>
     </div>
@@ -4003,11 +4136,22 @@ document.addEventListener("click", e => {
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
   if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
-  if (act === "coachSel") { coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render(); window.scrollTo(0, 0); return; }
+  if (act === "coachSel") {
+    coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render();
+    const ik = $("#intake"); if (ik) ik.scrollIntoView({ block: "start", behavior: "smooth" }); else window.scrollTo(0, 0);
+    return;
+  }
+  if (act === "editPlan") { const c = document.getElementById("settings-" + el.dataset.g); if (c) { c.classList.remove("collapsed"); c.scrollIntoView({ block: "start", behavior: "smooth" }); } return; }
+  if (act === "stepPlan") { const c = document.getElementById("plan-" + el.dataset.g), d = c && (c.querySelector(".day-card.today") || c.querySelector(".day-card:not(.done):not(.rest)")); if (d || c) (d || c).scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+  if (act === "stepRetest") { stepRetestOpen = stepRetestOpen === el.dataset.g ? null : el.dataset.g; render(); const f = $(`#steps-${el.dataset.g} form`); if (f) f.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
+  if (act === "pullReps") { const gs = coach().goals[el.dataset.g]; if (!gs) return; gs.pullBase = pullBest(gs); gs.stage = 1; gs.unlockedAt = today(); save(); render(); toast(`New target: ${nextPull(gs.pullBase)} pull-ups`); return; }
   if (act === "planMark") {
     const g = el.dataset.g, w = el.dataset.w, i = +el.dataset.i, m = el.dataset.m, ni = el.closest(".day-card") && el.closest(".day-card").querySelector("[data-plan-note]"), note = ni ? ni.value : "";
     const d = coach().goals[g].weeks[w].days[i], early = d.date > today();
     const cel = markDay(g, w, i, m, m === "done" ? "" : note); planNote = null; render();
+    // move on to the next workout still to do, further down the plan
+    { const cards = [...document.querySelectorAll(`#plan-${g} .day-card`)], at = cards.findIndex(c => c.id === `day-${g}-${w}-${i}`);
+      const nx = cards.slice(at + 1).find(c => c.querySelector("[data-act=planMark]")); if (nx && !cel) setTimeout(() => nx.scrollIntoView({ block: "start", behavior: "smooth" }), 250); }
     toast(m === "skip" ? "Marked skipped" : m === "partial" ? `Partial logged${early ? " for today" : ""} — about half` : early ? `Done early — logged to today, ≈ ${dayKcal(d)} cal` : `Logged ${d.title.toLowerCase()} — ≈ ${dayKcal(d)} cal`);
     if (cel) setTimeout(() => showCelebration(cel), 350);
     return;
@@ -4021,7 +4165,7 @@ document.addEventListener("click", e => {
     for (const k of Object.keys(gs.weeks || {})) if (k >= mondayOf(today())) rebuildWeek(g, gs, k);
     save(); toast(`Plan updated — ${gs.days} days a week, ${gs.minutes || 45} minutes each`); render(); return;
   }
-  if (act === "planRetest") { const d = document.getElementById("retest-" + el.dataset.g); if (d) { d.open = true; d.scrollIntoView({ block: "start", behavior: "smooth" }); } return; }
+  if (act === "planRetest") { dayRetestOpen = el.dataset.g; render(); return; }
   if (act === "safetyMore") { e.preventDefault(); const b = $("#safety"); if (b) b.innerHTML = `<b>Safety first.</b> ${SAFETY_FULL}`; return; }
   if (act === "planSummaryHide") { const gs = coach().goals[el.dataset.g]; if (gs) { gs.showSummary = null; save(); } render(); return; }
   if (act === "planPdf") { sharePdf(el.dataset.g, el.dataset.scope); return; }
