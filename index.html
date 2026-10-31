@@ -1698,13 +1698,12 @@ function viewHome() {
       <div class="value n">${en.protein}<small>/ ${s.proteinTarget} g</small></div>
       <div class="sub">${en.protein >= s.proteinTarget ? "Target hit 💪" : `${r1n(s.proteinTarget - en.protein)} g to go`}</div>
       <div class="bar ${en.protein >= s.proteinTarget ? "good" : ""}"><span style="width:${Math.min(100, en.protein / s.proteinTarget * 100)}%"></span></div></button>
-    <button class="tile" data-tab="fitness" data-fv="strength"><div class="label">Strength this week</div>
-      <div class="value n">${strength}<small>/ ${s.strengthTarget}</small></div>
+    ${(() => { const showCore = db.core.length || coach().goals.core || (db.settings.extraGoals || []).includes("core");
+      return `<button class="tile span2" data-tab="fitness" data-fv="strength"><div class="label">Strength this week</div>
+      <div class="value n">${strength}<small>/ ${s.strengthTarget} min</small></div>
       <div class="sub">${strength >= s.strengthTarget ? "Target hit 🔥" : `${s.strengthTarget - strength} min to go`}</div>
-      <div class="bar ${strength >= s.strengthTarget ? "good" : ""}"><span style="width:${Math.min(100, strength / s.strengthTarget * 100)}%"></span></div></button>
-    <button class="tile" data-tab="fitness" data-fv="strength"><div class="label">Core this week</div>
-      <div class="value n">${coreSets}<small>sets</small></div>
-      <div class="sub">${coreWk.length ? `${coreWk.length} exercise${coreWk.length === 1 ? "" : "s"} logged` : "Tap to log"}</div></button>
+      <div class="bar ${strength >= s.strengthTarget ? "good" : ""}"><span style="width:${Math.min(100, strength / s.strengthTarget * 100)}%"></span></div>
+      ${showCore ? `<div class="sub" style="margin-top:8px;font-size:12px">Core: ${coreSets} set${coreSets === 1 ? "" : "s"}${coreWk.length ? ` · ${coreWk.length} exercise${coreWk.length === 1 ? "" : "s"}` : " this week"}</div>` : ""}</button>`; })()}
   </div>
   <button class="tile" data-tab="labs" style="margin-bottom:14px"><div class="label">Labs &amp; blood work ›</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
