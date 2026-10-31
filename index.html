@@ -120,6 +120,7 @@ main { max-width: 640px; margin: 0 auto; padding: 6px 16px 24px; }
 .lost { text-align: right; }
 .lost .v { font-family: var(--num); font-size: 36px; font-weight: 800; color: var(--good); line-height: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.grid2 > .span2 { grid-column: 1 / -1; }
 .tile {
   background: var(--card); border-radius: var(--radius); padding: 14px; min-width: 0; text-align: left;
   border: 0; color: var(--ink); font: inherit; display: block; width: 100%; cursor: pointer;
@@ -388,7 +389,7 @@ const DEFAULTS = {
   v: 6,
   settings: {
     name: "", setupDone: false, heightIn: null, startWeight: null, startDate: null, goals: [],
-    theme: "dark", weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 140, age: null, burnOverride: null,
+    theme: "dark", weighDay: 5, cardioTarget: 150, strengthTarget: 90, fastTarget: 16, proteinTarget: 150, age: null, burnOverride: null,
     // suggestions shown when logging; names you type in get added
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
@@ -401,7 +402,8 @@ const DEFAULTS = {
   },
   weights: [], meals: [], fasts: [], cheats: [], cardio: [], core: [], strength: [], labs: [],
   comp: [],    // body fat % / BMI entered by hand: {id, date, bf, bmi, note}
-  body: [],    // scale-only measurements (e.g. Renpho): {id, date, muscle, skeletal, ffm, visceral, subq, water, protein, bone, metage}
+  waist: [],   // waist at the navel, entered by hand: {id, date, in}
+  body: [],    // scale-only measurements (e.g. Renpho): {id, date, muscle, skeletal, ffm, visceral, subq, water, protein, bone, metage, bmr}
   foods: [],   // food table: {id, name, serving, amt, unit, cal, protein, aliases, src}
   presets: []  // Favorites: {id, name, items:[{foodId, name, servings, cal, protein}]}
 };
@@ -504,6 +506,8 @@ function migrate(db, hadSaved) {
   for (const a of Object.keys(AREAS)) if (db.settings.exercises && Array.isArray(db.settings.exercises[a])) ex[a] = db.settings.exercises[a];
   db.settings.exercises = ex;
   if (!Array.isArray(db.settings.liftGoals)) db.settings.liftGoals = [];
+  // protein default went from 140 to 150 g; move people still on the old default, once
+  if (!db.settings.protein150) { if (db.settings.proteinTarget === 140) db.settings.proteinTarget = 150; db.settings.protein150 = true; }
   return db;
 }
 function save() {
@@ -1119,12 +1123,14 @@ const SPEC = {
   comp: { title: "body composition", added: "Saved",
     rows: [[D()], [F("bf", "Body fat (%)", "num", { step: "0.1", min: 2, max: 75 }), F("bmi", "BMI", "num", { step: "0.1", min: 10, max: 90 })], [F("note", "Note", "text", { ph: "optional" })]],
     check: e => { if (e.bf == null && e.bmi == null) return "Enter body fat %, BMI, or both."; } },
+  waist: { title: "waist", added: "Saved",
+    rows: [[D()], [F("in", "Waist at the navel (in)", "num", { req: 1, step: "any", min: 15, max: 80 })]] },
   body: { title: "scale measurements", added: "Measurements saved",
     rows: [[D()], [F("muscle", "Muscle mass (lb)", "num", { step: "0.1", min: 0 }), F("skeletal", "Skeletal muscle (%)", "num", { step: "0.1", min: 0, max: 100 })],
       [F("ffm", "Fat-free mass (lb)", "num", { step: "0.1", min: 0 }), F("bone", "Bone mass (lb)", "num", { step: "0.1", min: 0 })],
       [F("visceral", "Visceral fat (level)", "num", { step: "0.1", min: 0 }), F("subq", "Subcutaneous fat (%)", "num", { step: "0.1", min: 0, max: 100 })],
       [F("water", "Body water (%)", "num", { step: "0.1", min: 0, max: 100 }), F("protein", "Protein (%)", "num", { step: "0.1", min: 0, max: 100 })],
-      [F("metage", "Metabolic age (years)", "int", { min: 1, max: 120 })], [F("note", "Note", "text", { ph: "optional" })]],
+      [F("metage", "Metabolic age (years)", "int", { min: 1, max: 120 }), F("bmr", "BMR (kcal)", "int", { min: 500, max: 5000 })], [F("note", "Note", "text", { ph: "optional" })]],
     check: e => { if (!BODY_METRICS.some(([k]) => e[k] != null)) return "Enter at least one measurement."; } },
   cheats: { title: "cheat meal",
     rows: [[D("Day", { maxToday: 0 })], [F("text", "What's the plan?", "text", { req: 1 })], [F("done", "Already had it", "check")]] },
@@ -1242,6 +1248,7 @@ function addEntry(k, f) {
   if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
   if (k === "cardio") { lastAdd.cardioType = actFor(e.type).name; logCardio = null; }
   if (k === "comp") compOpen = false;
+  if (k === "waist") waistOpen = false;
   save(); toast(SPEC[k].added || "Saved");
 }
 function editSheet() {
@@ -1402,7 +1409,7 @@ const FLAME = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><
 // Scale-only body measurements (Renpho etc.)
 // =====================================================================
 const BODY_METRICS = [["muscle", "Muscle mass", "lb"], ["skeletal", "Skeletal muscle", "%"], ["ffm", "Fat-free mass", "lb"], ["visceral", "Visceral fat", ""],
-  ["subq", "Subcutaneous fat", "%"], ["water", "Body water", "%"], ["protein", "Protein", "%"], ["bone", "Bone mass", "lb"], ["metage", "Metabolic age", "yrs"]];
+  ["subq", "Subcutaneous fat", "%"], ["water", "Body water", "%"], ["protein", "Protein", "%"], ["bone", "Bone mass", "lb"], ["metage", "Metabolic age", "yrs"], ["bmr", "BMR", "kcal"]];
 let bMetric = "muscle";
 const fmtM = (v, u) => v == null ? "—" : `${nf(v)}${u === "%" ? "%" : u ? " " + u : ""}`;
 function bodyCard() {
@@ -1425,6 +1432,18 @@ function bodyCard() {
 // Body composition: body fat % and BMI from weigh-ins (Apple Health or typed) plus hand-entered values
 let cMetric = "bf";
 let compOpen = false; // body composition entry form shown
+let waistOpen = false; // waist entry form shown
+function waistRow() {
+  const all = [...db.waist].filter(x => x.in != null).sort((a, b) => a.date.localeCompare(b.date)), a = all[0], z = all[all.length - 1], d = all.length > 1 ? z.in - a.in : null;
+  return `<div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="grow" style="flex:1"><div class="faint">Waist (in)</div>
+        <div><span class="n" style="font-size:28px;font-weight:800">${z ? +z.in.toFixed(2) : "—"}</span>
+        <span class="faint" style="font-size:12px">${!z ? "at the navel" : d == null ? fmtD(z.date) : `${d < 0 ? "▼" : d > 0 ? "▲" : "="} ${+Math.abs(d).toFixed(2)} since ${fmtD(a.date)}`}</span></div></div>
+      <button type="button" class="x" data-act="waistEdit" aria-label="Log waist">${waistOpen ? "×" : "✎"}</button></div>
+    ${waistOpen ? `<form data-form="add" data-k="waist" id="waistForm" style="margin-top:8px"><input type="hidden" name="date" value="${today()}">
+      <div class="row"><label style="flex:2">Waist at the navel (in)<input type="number" name="in" step="any" min="15" max="80" inputmode="decimal" required></label>
+      <button class="btn small" style="align-self:flex-end;margin-bottom:12px">Save</button></div></form>` : ""}`;
+}
 function compSeries(k) {
   const pts = [];
   for (const w of db.weights) if (w[k] != null) pts.push({ date: w.date, v: w[k], src: w.src === "health" ? "health" : "weigh-in" });
@@ -1433,7 +1452,7 @@ function compSeries(k) {
 }
 function compLatest(k) { const p = compSeries(k); const x = p[p.length - 1]; return x ? { date: x.date, [k]: x.v, src: x.src } : null; }
 function compCard(bfE, mmE, leanE, bmi) {
-  const has = compSeries("bf").length || compSeries("bmi").length || mmE || leanE, rows = newestFirst(db.comp), n = compSeries(cMetric).length;
+  const has = compSeries("bf").length || compSeries("bmi").length || mmE || leanE, rows = newestFirst([...db.comp, ...db.waist]), n = compSeries(cMetric).length;
   const cell = (label, v, sub) => `<div><div class="faint">${label}</div><div class="n" style="font-size:28px;font-weight:800">${v}</div>${sub ? `<div class="faint" style="font-size:12px">${sub}</div>` : ""}</div>`;
   return `<div class="card"><h2>Body composition <small>latest</small></h2>
     <button class="comp-grid" data-act="compAdd" aria-label="Add body fat or BMI">
@@ -1446,11 +1465,12 @@ function compCard(bfE, mmE, leanE, bmi) {
     ${compSeries("bf").length || compSeries("bmi").length ? `<h2 style="margin-top:18px">Trend</h2>
       <select id="compMetric" aria-label="Measurement to chart" style="margin:0 0 10px"><option value="bf"${cMetric === "bf" ? " selected" : ""}>Body fat %</option><option value="bmi"${cMetric === "bmi" ? " selected" : ""}>BMI</option></select>
       ${n ? `<div class="chart" id="compChart"></div><div class="legend"><span><i class="lg-dot"></i>Entered / weigh-in</span><span><i class="lg-ring"></i>Apple Health</span></div>` : `<p class="faint">No ${cMetric === "bf" ? "body fat" : "BMI"} readings yet.</p>`}` : ""}
+    ${waistRow()}
     ${compOpen ? `<form id="logComp" data-form="add" data-k="comp" style="margin-top:14px">${specFields("comp", { date: today() })}
       <div class="btn-row"><button class="btn" style="flex:1">Save</button><button type="button" class="btn ghost" data-act="compCancel">Cancel</button></div></form>`
       : `<button class="btn ghost small" style="margin-top:14px" data-act="compAdd">+ Add body fat % or BMI</button>`}
     ${rows.length ? `<details id="compAll" style="margin-top:14px"><summary>All readings (${rows.length})</summary>${moreList(rows, 20, x => `<li><div class="grow"><b>${fmtDay(x.date)}</b>
-      <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns("comp", x.id)}</li>`)}
+      <div class="faint">${[x.bf != null ? `Body fat ${nf(x.bf)}%` : "", x.bmi != null ? `BMI ${nf(x.bmi)}` : "", x.in != null ? `Waist ${+x.in.toFixed(2)} in` : "", x.note ? esc(x.note) : ""].filter(Boolean).join(" · ")}</div></div>${rowBtns(x.in != null ? "waist" : "comp", x.id)}</li>`)}
       <p class="faint" style="margin:10px 0 0">Values from weigh-ins and Apple Health can be changed by editing that weigh-in under All weigh-ins.</p></details>` : ""}
   </div>`;
 }
@@ -1465,8 +1485,6 @@ function viewHome() {
   const goals = [...s.goals].sort((a, b) => b - a), finalG = goals[goals.length - 1];
   const next = goals.find(g => !last || last.w > g);
   const pctAll = last ? Math.max(0, Math.min(100, (s.startWeight - last.w) / (s.startWeight - finalG) * 100)) : 0;
-  const thisW = weekSummary(tw, weekStart(t)), prevW = weekSummary(tw, addDays(weekStart(t), -7));
-  const wd = thisW.avg != null && prevW.avg != null ? thisW.avg - prevW.avg : null;
   const active = db.fasts.find(f => !f.end);
   const cardio = sumMin(db.cardio, weekStart(t)), strength = sumMin(db.strength, weekStart(t));
   const coreWk = db.core.filter(x => x.date >= weekStart(t)), coreSets = coreWk.reduce((a, x) => a + (x.sets || 1), 0);
@@ -1498,9 +1516,6 @@ function viewHome() {
     <button data-act="quick" data-go="fitness" data-fv="strength" data-focus="strengthForm">${ICONS.plus}Log strength</button>
   </div>
   <div class="grid2">
-    <button class="tile" data-tab="weight"><div class="label">This week avg</div>
-      <div class="value n">${r1(thisW.avg)}<small>lb</small></div>
-      <div class="sub ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${wd == null ? "Need 2 weeks of data" : `${wd <= 0 ? "▼" : "▲"} ${r1(Math.abs(wd))} vs last week`}</div></button>
     <button class="tile" data-tab="weight"><div class="label">Next milestone</div>
       <div class="value n">${next ?? finalG}<small>lb</small></div>
       <div class="sub">${last && next ? `${r1(last.w - next)} lb to go` : "Maintenance — hold steady"}</div></button>
@@ -1508,15 +1523,17 @@ function viewHome() {
       <div class="value n">${active ? fmtDur(Date.now() - new Date(active.start)) : "Eating"}</div>
       <div class="sub">${active ? `Goal ${s.fastTarget}h · started ${fmtTime(active.start)}` : "Tap to start a fast"}</div>
       ${active ? `<div class="bar"><span style="width:${Math.min(100, (Date.now() - new Date(active.start)) / (s.fastTarget * 36e5) * 100)}%"></span></div>` : ""}</button>
-    <button class="tile" data-tab="fitness" data-fv="cardio"><div class="label">Cardio this week</div>
+    <button class="tile span2" data-tab="fitness" data-fv="cardio"><div class="label">Cardio this week</div>
       <div class="value n">${cardio}<small>/ ${s.cardioTarget}</small></div>
       <div class="sub">${cardio >= s.cardioTarget ? "Target hit 🔥" : `${s.cardioTarget - cardio} min to go`}</div>
       <div class="bar ${cardio >= s.cardioTarget ? "good" : ""}"><span style="width:${Math.min(100, cardio / s.cardioTarget * 100)}%"></span></div></button>
-    <button class="tile" data-tab="food"><div class="label">Calories today</div>
-      <div class="value n">${en.in}<small>/ ${en.out}</small></div>
-      <div class="sub">${en.n ? (en.in <= en.out ? `${en.out - en.in} under (est.)` : `${en.in - en.out} over (est.)`) : "in / out — tap to log food"}</div>
-      <div class="sub">out = ${en.out - en.ex} rest${en.ex ? ` + ${en.ex} exercise` : ""}</div></button>
-    <button class="tile" data-tab="food"><div class="label">Protein today</div>
+    <button class="tile" data-act="openEnergy"><div class="label">Calories today</div>
+      <div class="value n">${en.in.toLocaleString()}</div>
+      <div class="sub ${en.n ? (en.in <= en.out ? "down" : "up") : ""}">${en.n ? `${Math.abs(en.out - en.in).toLocaleString()} ${en.in <= en.out ? "under" : "over"}` : "Tap to log food"}</div></button>
+    <button class="tile" data-act="openEnergy"><div class="label">Burned today</div>
+      <div class="value n">${en.out.toLocaleString()}</div>
+      <div class="sub" style="white-space:normal">${(en.out - en.ex).toLocaleString()} resting + ${en.ex.toLocaleString()} exercise</div></button>
+    <button class="tile span2" data-tab="food"><div class="label">Protein today</div>
       <div class="value n">${en.protein}<small>/ ${s.proteinTarget} g</small></div>
       <div class="sub">${en.protein >= s.proteinTarget ? "Target hit 💪" : `${r1n(s.proteinTarget - en.protein)} g to go`}</div>
       <div class="bar ${en.protein >= s.proteinTarget ? "good" : ""}"><span style="width:${Math.min(100, en.protein / s.proteinTarget * 100)}%"></span></div></button>
@@ -1565,6 +1582,9 @@ function viewWeight() {
     <div class="tile"><div class="label">Latest</div><div class="value n">${lw ? r1(lw.w) + "<small>lb</small>" : "—"}</div><div class="sub">${lw ? (lw.date === t ? "today" : fmtD(lw.date)) + (lw.type !== "wake" ? " · " + TYPES[lw.type].toLowerCase() : "") : "no weigh-ins"}</div></div>
     <div class="tile"><div class="label">Change</div><div class="value n ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${signed(wd)}</div><div class="sub">vs last wk</div></div>
   </div>
+  <div class="tile" style="margin-bottom:14px"><div class="label">This week avg</div>
+    <div class="value n">${r1(thisW.avg)}<small>lb</small></div>
+    <div class="sub ${wd == null ? "" : wd <= 0 ? "down" : "up"}">${wd == null ? "Need 2 weeks of data" : `${wd <= 0 ? "▼" : "▲"} ${r1(Math.abs(wd))} vs last week`}</div></div>
   <div class="card">
     <h2>Weight trend</h2>
     <div class="seg">${[["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]].map(([k, l]) => `<button class="${wView === k ? "on" : ""}" data-act="wview" data-v="${k}">${l}</button>`).join("")}</div>
@@ -1903,12 +1923,14 @@ function logFavorite(p) {
   qaSaved = { id: m.id, name: p.name, slot: m.slot, cal, protein, custom: false, undo: true };
   toast(`Logged ${p.name}`);
 }
-// Calories out: resting burn (Mifflin-St Jeor × 1.2, or your own number) + logged exercise
+// Calories out: resting burn (latest Renpho BMR, else your own number, else Mifflin-St Jeor BMR) + logged exercise. No activity multiplier.
 const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWeight; };
 function baseBurn() {
   const s = db.settings, lb = bodyLb(), kg = lb / 2.2046;
+  const r = db.body.filter(x => x.bmr > 0).sort((a, b) => a.date.localeCompare(b.date)).pop();
+  if (r) return { cal: Math.round(r.bmr), how: `Renpho BMR from ${fmtD(r.date)}` };
   if (s.burnOverride) return { cal: s.burnOverride, how: "your number from Settings" };
-  if (s.heightIn && s.age) return { cal: Math.round((10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + 5) * 1.2), how: "Mifflin-St Jeor formula, lightly active day" };
+  if (s.heightIn && s.age) return { cal: Math.round(10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + (s.sex === "female" ? -161 : 5)), how: "Mifflin-St Jeor BMR — add your Renpho BMR under Scale measurements to use it instead" };
   return { cal: Math.round(lb * 11), how: "rough estimate — add your height and age in Settings for a better one" };
 }
 // Speed → MET, [upper bound (mph, exclusive), MET]. 2024 Compendium; * = 2011 edition or nearest band.
@@ -2125,10 +2147,12 @@ function qaSave() {
 // =====================================================================
 // Fast & food tab
 // =====================================================================
+let energyBack = false; // opened from a Home calorie card
 function energyCard() {
   const s = db.settings, t = today(), e = dayEnergy(t), net = e.in - e.out, bb = baseBurn();
   const days = [...Array(7)].map((_, i) => addDays(t, -i)).map(d => ({ d, ...dayEnergy(d) })).filter(x => x.n);
-  return `<div class="card"><h2>Calories in vs out <small>today</small></h2>
+  return `<div class="card" id="energyCard"><h2>Calories in vs out <small>today</small></h2>
+    ${energyBack ? `<button class="btn ghost small" data-act="energyBack" style="margin:0 0 12px">‹ Back to Home</button>` : ""}
     <div class="grid2" style="margin:0">
       <div><div class="faint">In (food)</div><div class="n" style="font-size:34px;font-weight:800">${e.in}</div></div>
       <div><div class="faint">Out (estimated)</div><div class="n" style="font-size:34px;font-weight:800">${e.out}</div><div class="faint">${bb.cal} resting${e.ex ? ` + ${e.ex} exercise` : ""}</div></div>
@@ -3885,7 +3909,7 @@ document.addEventListener("change", e => {
     if (!data || typeof data !== "object" || !Array.isArray(data.weights)) throw new Error("it isn't a Momentum backup");
     const n = k => Array.isArray(data[k]) ? data[k].length : 0;
     const made = data.exportedAt ? ` from ${fmtDT(data.exportedAt)}` : "";
-    if (!confirm(`Restore this backup${made}?\n\n${n("weights")} weigh-ins, ${n("meals")} meals, ${n("cardio") + n("strength") + n("core")} workouts, ${n("labs")} lab results.\n\nIt replaces everything currently on this device (a safety copy of the current data is kept).`)) return;
+    if (!confirm(`Restore this backup${made}?\n\n${n("weights")} weigh-ins${n("waist") ? `, ${n("waist")} waist entries` : ""}, ${n("meals")} meals, ${n("cardio") + n("strength") + n("core")} workouts, ${n("labs")} lab results.\n\nIt replaces everything currently on this device (a safety copy of the current data is kept).`)) return;
     try { localStorage.setItem(KEY + ".before-restore", JSON.stringify(db)); } catch (err) {}
     localStorage.setItem(KEY, JSON.stringify(data)); db = load(); save(); applyTheme(); current = "home"; render(); toast("Backup restored");
   }).catch(err => alert("Couldn't restore that file: " + err.message));
@@ -3905,7 +3929,7 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); energyBack = false; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const ct = e.target.closest(".foldable > h2"); if (ct && !e.target.closest("a, button, select, input")) { toggleCard(ct); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
@@ -3997,6 +4021,13 @@ document.addEventListener("click", e => {
   if (act === "coachStop") { if (confirm("Stop this goal and delete its test history?")) { delete coach().goals[el.dataset.id]; save(); coachSel = null; render(); } return; }
   if (act === "scanStart") { startScan(); return; }
   if (act === "compAdd") { compOpen = true; render(); const f = $("#logComp"); if (f) { f.scrollIntoView({ block: "center", behavior: "smooth" }); const i = $("#logComp [name=bf]"); if (i) setTimeout(() => i.focus({ preventScroll: true }), 300); } return; }
+  if (act === "waistEdit") { waistOpen = !waistOpen; render(); const i = $("#waistForm [name=in]"); if (i) i.focus(); return; }
+  if (act === "openEnergy") {
+    energyBack = true; go("food");
+    const c = $("#energyCard"); if (c) { c.classList.remove("collapsed"); c.scrollIntoView({ block: "start", behavior: "smooth" }); }
+    return;
+  }
+  if (act === "energyBack") { energyBack = false; go("home"); return; }
   if (act === "compCancel") { compOpen = false; render(); return; }
   if (act === "logCardio") { logCardio = { step: "group" }; renderSheet(); return; }
   if (act === "logGroup") { logCardio = { step: "act", g: +el.dataset.g }; renderSheet(); return; }
