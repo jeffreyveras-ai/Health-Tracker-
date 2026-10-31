@@ -145,6 +145,10 @@ input, select, textarea {
   background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; min-height: 48px;
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+/* iOS gives date and time inputs a built-in minimum width; make them fill their box instead */
+input[type="date"], input[type="time"], input[type="datetime-local"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+input::-webkit-date-and-time-value { text-align: left; }
+.row > label { min-width: 0; }
 input[type="checkbox"] { width: 24px; height: 24px; min-height: 0; display: inline-block; margin: 0 10px 0 0; accent-color: var(--accent); flex: none; }
 label.check { display: flex; align-items: center; color: var(--ink); font-size: 16px; font-weight: 500; }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--card-2); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; }
