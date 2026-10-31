@@ -323,6 +323,7 @@ label.chip.chk { display: inline-flex; align-items: center; gap: 6px; margin: 0;
 .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; padding: 0; cursor: pointer; }
 .pick { display: grid; grid-template-columns: 1fr auto; align-items: center; text-align: left; border: 0; border-radius: 14px; background: var(--card-2); color: var(--ink); font: inherit; font-weight: 700; font-size: 17px; padding: 14px 16px; min-height: 56px; cursor: pointer; }
 .pick small { grid-column: 1; font-weight: 500; font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.pick.on { box-shadow: inset 0 0 0 2px var(--accent); }
 .pick span { grid-column: 2; grid-row: 1 / span 2; color: var(--ink-3); font-size: 22px; }
 .pick:disabled { opacity: .45; cursor: default; }
 #scanner { position: fixed; inset: 0; z-index: 45; background: #000; display: flex; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
@@ -472,7 +473,7 @@ const FOOD_TABLE = [
   ["Black coffee", "1 cup", 1, "cup", 2, 0, ["coffee"]]
 ];
 const LEGACY = ["planks", "pushups"]; // v2 collections, folded into core/strength by migrate()
-const TYPES = { wake: "Wake-up", walk: "Post-walk", other: "Other" };
+const TYPES = { wake: "Wake-up", walk: "Post-walk", other: "Entered by hand" };
 
 function load() {
   let saved = null;
@@ -713,7 +714,7 @@ const SYNC_STEPS = [
     <a class="btn block" href="${SHORTCUT_URL}" target="_blank" rel="noopener" style="text-decoration:none;display:flex;align-items:center;justify-content:center">Install the Momentum shortcut</a>
     <p class="faint">It opens in the Shortcuts app — tap <b>Add Shortcut</b>. If Health asks for permission when it first runs, tap Allow.</p>`],
   ["Sync after each weigh-in", `<ol style="padding-left:20px;margin:0 0 12px"><li>After weighing in, run the <b>Momentum</b> shortcut.</li><li>Open Momentum.</li><li>Tap <b>Sync from Health</b>, and paste if asked.</li></ol>
-    <button type="button" class="btn block" data-act="clipSync">⟳ Sync from Health now</button>`]
+    <button type="button" class="btn block" data-act="pasteOpen">⟳ Sync from Health now</button>`]
 ];
 function syncGuideSheet() {
   const i = syncGuide, [title, body] = SYNC_STEPS[i];
@@ -729,24 +730,53 @@ function syncGuideSheet() {
         <li><b>No body fat?</b> Socks block the scale's body-fat reading — weigh in barefoot on dry feet.</li>
         <li><b>Old numbers?</b> Open the scale app after weighing in so it syncs to Health, then run the shortcut again.</li>
         <li><b>Nothing found?</b> In the Health app, check that your scale app and the Shortcuts app both have permission for Weight and Body Fat Percentage.</li></ul></details>
-    <p class="faint" style="margin-top:14px">Optional — <b>Log a weigh-in</b> on the Weight tab is always the easiest way.</p>`;
+    ${i !== 2 ? `<a class="btn ghost block small" href="${SHORTCUT_URL}" target="_blank" rel="noopener" style="text-decoration:none;display:flex;align-items:center;justify-content:center;margin-top:12px">Install the Momentum shortcut</a>` : ""}
+    <p class="faint" style="margin-top:14px">Optional — <b>Log a weigh-in</b> on the Weight tab is always the easiest way.${db.settings.lastSync ? "" : ` Already set up? <button type="button" class="link" data-act="pasteOpen">Paste a sync link</button>`}</p>`;
 }
 const syncCard = () => `<div class="card"><h2>Sync from Apple Health <small>optional</small></h2>
     <p class="muted" style="margin-top:0">${SYNC_LINE} Log a weigh-in above is the easiest way; this saves typing if your scale already sends readings to Health.</p>
     <button class="btn secondary block" data-act="syncGuide">Set it up step by step</button></div>`;
-// "Sync from Health" button: read the link the Shortcut copied to the clipboard
-async function clipboardSync() {
-  let text = "";
-  try { text = await navigator.clipboard.readText(); } catch (e) {}
-  const ok = t => /[?&](w|wt|wm)=/.test(t);
-  if (!ok(text)) text = prompt("Paste the sync link from your Health shortcut (it should contain ?w=… or ?wt=…):", "") || "";
-  if (!text.trim()) return;
-  const q = text.trim().match(/\?([^\s#]*)/);
-  if (!q || !ok("?" + q[1])) { toast("That doesn't look like a sync link (no ?w= or ?wt=)"); return; }
-  toast(importSync(new URLSearchParams(q[1].replace(/&amp;/g, "&"))));
-  render();
+// "Sync from Health": first time → the setup guide; after that → an in-app paste screen with a preview
+let pasteSync = null; // { text, params, rows, msg } while the paste screen is open
+function syncPreview(p) {
+  const rows = [], get = k => num(p.get(k)), rnd = n => Math.round(n * 10) / 10;
+  const d = ((p.get("d") || "").match(/\d{4}-\d{2}-\d{2}/) || [today()])[0], w = get("w");
+  let bf = get("bf"); if (bf != null && bf > 0 && bf < 1) bf *= 100;
+  const extra = [bf != null && bf > 0 && bf < 80 ? `${rnd(bf)}% body fat` : "", get("bmi") > 5 && get("bmi") < 100 ? `BMI ${rnd(get("bmi"))}` : "",
+    get("lean") > 20 && get("lean") < 500 ? `${rnd(get("lean"))} lb lean` : "", get("mm") > 20 && get("mm") < 500 ? `${rnd(get("mm"))} lb muscle` : ""].filter(Boolean);
+  if (w != null && w >= 50 && w <= 700) rows.push(["⚖️", `Weigh-in ${r1(w)} lb`, [fmtD(d), TYPES[p.get("t")] || TYPES.wake, ...extra].join(" · ")]);
+  else if (extra.length) rows.push(["⚖️", "Body measurements", `${extra.join(" · ")} — added to your ${fmtD(d)} reading if there is one`]);
+  const wt = String(p.get("wt") || "").trim(), ws = String(p.get("ws") || ""), wm = parseMinutes(p.get("wm")), wc = num(String(p.get("wc") || "").replace(/(\d),(\d{3})\b/g, "$1$2")), whr = get("whr");
+  const wd = ((p.get("wd") || "").match(/\d{4}-\d{2}-\d{2}/) || [d])[0];
+  if (wt || wm != null) rows.push(wm > 0 ? ["🏃", `${healthWorkoutType(`${wt} ${/peloton/i.test(ws) && /cycl|bik|ride/i.test(wt) ? "peloton" : ""}`) === "Custom" ? wt || "Workout" : healthWorkoutType(`${wt} ${/peloton/i.test(ws) && /cycl|bik|ride/i.test(wt) ? "peloton" : ""}`)} · ${Math.round(wm)} min`,
+    [fmtD(wd), wc > 0 && wc < 5000 ? `${Math.round(wc)} cal from Health` : "calories estimated", whr >= 40 && whr <= 220 ? `♥ ${Math.round(whr)} avg` : ""].filter(Boolean).join(" · ")]
+    : ["⚠️", "Workout skipped", "the link has no minutes"]);
+  return rows;
 }
-
+function readSyncText(text) {
+  const q = String(text || "").trim().match(/\?([^\s#]*)/);
+  if (!q || !/(^|&)(w|wt|wm)=/.test(q[1])) return null;
+  return new URLSearchParams(q[1].replace(/&amp;/g, "&"));
+}
+function setPasteText(text) {
+  const p = readSyncText(text);
+  pasteSync = p ? { text, params: p, rows: syncPreview(p) } : { text, msg: text.trim() ? "That doesn't look like a sync link — it should contain ?w= or ?wt=. Run the Momentum shortcut, then tap Paste again." : "The clipboard is empty. Run the Momentum shortcut first — it copies the sync link." };
+}
+function pasteSheet() {
+  const ps = pasteSync;
+  return `<div class="grab"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Sync from Health</h3><button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
+    <p class="muted">Run the <b>Momentum</b> shortcut first — it copies a sync link with your latest numbers. Then paste it here.</p>
+    ${ps.rows ? `<div class="banner" style="margin:0">Ready to add:</div>
+      <ul class="list">${ps.rows.map(([ic, t, sub]) => `<li><span style="font-size:22px;width:30px;flex:none">${ic}</span><div class="grow"><b>${esc(t)}</b><div class="faint">${esc(sub)}</div></div></li>`).join("")}</ul>
+      <div class="btn-row" style="margin-top:12px"><button type="button" class="btn ghost" data-act="closeSheet" style="flex:1">Cancel</button><button type="button" class="btn" data-act="pasteConfirm" style="flex:2">Confirm</button></div>`
+    : `<button type="button" class="btn block" data-act="pasteRead" style="min-height:64px;font-size:18px">📋 Paste</button>
+      ${ps.msg ? `<div class="banner warn" style="margin-top:12px">${esc(ps.msg)}</div>` : ""}
+      <details style="margin-top:14px"${ps.manual ? " open" : ""}><summary>Paste didn't work?</summary>
+        <label style="margin-top:8px">Press and hold here, then tap Paste<textarea data-paste rows="3" placeholder="https://…?w=…"></textarea></label>
+        <button type="button" class="btn secondary block small" data-act="pasteBox">Preview</button></details>
+      <button type="button" class="btn ghost block small" data-act="syncGuide" style="margin-top:12px">How to set up the shortcut</button>`}`;
+}
 // =====================================================================
 // Chart: inline SVG with smoothed line, goal lines, crosshair tooltip
 // =====================================================================
@@ -1414,39 +1444,100 @@ function viewInstall() {
   <button class="btn ghost block" data-act="browserOk">Continue in browser anyway</button>`;
 }
 const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,.txt,application/json,text/plain" data-act="import" style="display:none"></label>`;
+// First-time setup: one question per screen, with a progress bar and Back
+const MAIN_GOALS = { lose: ["Lose weight", "Burn fat and bring your weight down"], maintain: ["Maintain", "Hold steady where you are"], muscle: ["Build muscle", "Get stronger and add muscle"], fitter: ["Get fitter / healthier", "More energy, better heart health"] };
+const EXTRA_GOALS = { core: "Stronger core", mobility: "Mobility", balance: "Balance", back: "Stronger back", heart: "Heart health", mile: "Faster mile", pullup: "Pull-ups" };
+const ACTIVITY = { sit: ["Mostly sitting", "Desk job, little walking during the day", 1.2], light: ["Lightly active", "On your feet some of the day, short walks", 1.375],
+  active: ["Active", "On your feet most of the day, or exercise 3–5 days a week", 1.55], very: ["Very active", "Physical job, or hard exercise most days", 1.725] };
+const EXPERIENCE = { new: ["New to working out", "Start gentle and learn the moves"], some: ["Some experience", "You've trained on and off before"], very: ["Very experienced", "You train regularly and know your lifts"] };
+const MAIN_COACH = { lose: "fat", maintain: "heart", muscle: "muscle", fitter: "heart" };
+let ob = { i: 0, d: { units: "lb", sex: "male", weighDay: 5, extras: [], limits: [] } };
+const kgToLb = kg => kg * 2.2046;
+// Starting targets from the answers. Maintenance = Mifflin-St Jeor BMR × activity factor.
+function startTargets(d) {
+  const lb = d.weightLb, kg = lb / 2.2046, cm = d.heightIn ? d.heightIn * 2.54 : null;
+  const bmr = cm && d.age ? 10 * kg + 6.25 * cm - 5 * d.age + (d.sex === "female" ? -161 : 5) : lb * 10;
+  const maint = bmr * ACTIVITY[d.activity || "light"][2];
+  let cal = d.main === "lose" ? maint - 500 : d.main === "muscle" ? maint + 250 : maint;
+  if (d.main === "lose") cal = Math.max(cal, d.sex === "female" ? 1200 : 1500);
+  const pLb = d.main === "lose" ? (d.goalLb || lb) * 0.7 : d.main === "muscle" ? lb * 0.8 : lb * 0.6;
+  return { cal: Math.round(cal / 10) * 10, maint: Math.round(maint / 10) * 10, protein: Math.round(pLb / 5) * 5, cardio: d.main === "lose" && d.exp !== "new" ? 200 : 150, coach: MAIN_COACH[d.main || "fitter"] };
+}
+const obSteps = () => ["welcome", "main", ...(ob.d.main === "lose" ? ["goalw"] : []), "extras", "about", "activity", "exp", "limits", "weighday", "why", "summary"];
+const obChoice = (f, opts, multi) => `<div class="pick-list">${Object.entries(opts).map(([k, v]) => { const on = multi ? ob.d[f].includes(k) : ob.d[f] === k, [t, sub] = Array.isArray(v) ? v : [v, ""];
+  return `<button type="button" class="pick${on ? " on" : ""}" data-act="${multi ? "obToggle" : "obPick"}" data-f="${f}" data-v="${k}" aria-pressed="${on}">${esc(t)}${sub ? `<small>${esc(sub)}</small>` : ""}<span>${on ? "✓" : multi ? "+" : "›"}</span></button>`; }).join("")}</div>`;
 function viewSetup() {
-  const s = db.settings;
-  return `<div class="card hero"><div class="n" style="font-size:30px;font-weight:800;text-transform:uppercase;line-height:1">Momentum</div><div class="tagline">Track / Lift / Improve</div><h2>Let's set you up</h2>
-    <p class="muted" style="margin-top:0">A few details to personalize your tracker. Everything stays on this device, and you can change it later in Settings.</p>
-    <form data-form="setup">
-      <label>Your name<input name="name" value="${esc(s.name)}" placeholder="optional" autocomplete="given-name"></label>
-      <div class="row">
-        <label>Starting weight (lb)<input type="number" name="startWeight" step="0.1" min="50" max="700" inputmode="decimal" value="${s.startWeight ?? ""}" required></label>
-        <label>Start date<input type="date" name="startDate" value="${s.startDate || today()}" max="${today()}" required></label>
-      </div>
-      <div class="row">
-        <label>Height (ft)<input type="number" name="ft" min="3" max="8" inputmode="numeric" value="${s.heightIn ? Math.floor(s.heightIn / 12) : ""}" placeholder="5"></label>
-        <label>Height (in)<input type="number" name="in" min="0" max="11" inputmode="numeric" value="${s.heightIn ? Math.round(s.heightIn % 12) : ""}" placeholder="10"></label>
-      </div>
-      <div class="row">
-        <label>Age<input type="number" name="age" min="13" max="110" inputmode="numeric" value="${s.age ?? ""}"></label>
-        <label>Sex<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label>
-      </div>
-      <p class="faint" style="margin-top:-4px">Height, age and sex personalize calorie-burn estimates and fitness norms.</p>
-      <label>Weigh-in day<select name="weighDay">${DAYS.map((d, i) => `<option value="${i}"${i === weighDay() ? " selected" : ""}>${d}</option>`).join("")}</select></label>
-      <p class="faint" style="margin-top:-4px">Your weeks end on this day, so weekly averages and your weekly recap line up with your weigh-in.</p>
-      <label>Goal weights (lb, comma separated — the lowest is your final goal)<input name="goals" value="${esc((s.goals || []).join(", "))}" placeholder="e.g. 200, 190, 180" required inputmode="decimal"></label>
-      <p class="muted" style="margin:14px 0 6px">Do you have an injury (like a shoulder) that should limit upper-body exercises until a PT or doctor clears you?</p>
-      <div class="pick-list" role="radiogroup">
-        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="push" required style="width:20px;height:20px">Yes — no pushing or overhead (pulling OK)</label>
-        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="all" style="width:20px;height:20px">Yes — lock all upper-body work</label>
-        <label class="check pick" style="margin:0"><input type="radio" name="injury" value="no" style="width:20px;height:20px">No</label>
-      </div>
-      <button class="btn block" style="margin-top:8px">Start tracking</button>
-    </form></div>
-  <div class="card"><h2>Already have a backup?</h2>
-    <p class="muted" style="margin-top:0">Load a backup file saved from this app (from Files or iCloud Drive) to bring all your data back.</p>
-    ${RESTORE_BTN("Restore from backup")}</div>`;
+  const st = obSteps(); ob.i = Math.min(ob.i, st.length - 1); const k = st[ob.i], d = ob.d, u = d.units;
+  const next = (label = "Next", skip) => `<div class="btn-row" style="margin-top:16px">${skip ? `<button type="button" class="btn ghost" data-act="obNext" data-skip="1" style="flex:1">${skip}</button>` : ""}<button type="button" class="btn" data-act="obNext" style="flex:2">${label}</button></div>`;
+  const inp = (f, label, attrs = "") => `<label>${label}<input data-ob="${f}" value="${esc(d[f] ?? "")}" ${attrs}></label>`;
+  let body = "";
+  if (k === "welcome") body = `<div class="n" style="font-size:30px;font-weight:800;text-transform:uppercase;line-height:1">Momentum</div><div class="tagline">Track / Lift / Improve</div>
+    <p class="muted">Momentum tracks your weight, food, fasting and workouts, and builds a weekly plan around your goal — all saved on this device.</p>
+    <h2 style="margin-top:14px">What should we call you?</h2>${inp("name", "Your name", 'placeholder="optional" autocomplete="given-name"')}${next("Next", "Skip")}`;
+  if (k === "main") body = `<h2>What's your main goal?</h2>${obChoice("main", MAIN_GOALS)}`;
+  if (k === "goalw") body = `<h2>What's your goal weight?</h2><p class="muted" style="margin-top:0">You can add in-between milestones later in Settings.</p>
+    ${inp("goal", `Goal weight (${u})`, 'type="number" inputmode="decimal" step="0.1" placeholder="e.g. 180"')}${next()}`;
+  if (k === "extras") body = `<h2>Anything else?</h2><p class="muted" style="margin-top:0">Optional — pick up to two. They add small extras to your weekly plan, like a core finisher or a mobility session.</p>
+    ${obChoice("extras", Object.fromEntries(Object.entries(EXTRA_GOALS).filter(([x]) => x !== MAIN_COACH[d.main])), true)}${next("Next", "Skip")}`;
+  if (k === "about") body = `<h2>About you</h2><p class="muted" style="margin-top:0">For calorie math and fitness norms.</p>
+    <div class="seg" role="group" aria-label="Units">${["lb", "kg"].map(x => `<button type="button" class="${u === x ? "on" : ""}" data-act="obUnits" data-v="${x}">${x}</button>`).join("")}</div>
+    ${inp("weight", `Current weight (${u})`, 'type="number" inputmode="decimal" step="0.1" required')}
+    ${u === "lb" ? `<div class="row">${inp("ft", "Height (ft)", 'type="number" inputmode="numeric" placeholder="5"')}${inp("inch", "Height (in)", 'type="number" inputmode="numeric" placeholder="10"')}</div>`
+      : inp("cm", "Height (cm)", 'type="number" inputmode="numeric" placeholder="175"')}
+    <div class="row">${inp("age", "Age", 'type="number" inputmode="numeric"')}
+      <label>Sex<select data-ob="sex"><option value="male"${d.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${d.sex === "female" ? " selected" : ""}>Female</option></select></label></div>${next()}`;
+  if (k === "activity") body = `<h2>How active is a normal day?</h2><p class="muted" style="margin-top:0">Not counting workouts you'll log.</p>${obChoice("activity", ACTIVITY)}`;
+  if (k === "exp") body = `<h2>How much have you worked out before?</h2>${obChoice("exp", EXPERIENCE)}`;
+  if (k === "limits") body = `<h2>Any injuries or limits?</h2><p class="muted" style="margin-top:0">Workouts will avoid what could aggravate them.</p>
+    ${obChoice("limits", { upper: ["Upper body", "e.g. a shoulder — no pushing or overhead work"], knee: ["Knee", "No jumping, lunges or deep squats"], back: ["Lower back", "No heavy deadlifts"] }, true)}
+    ${next(d.limits.length ? "Next" : "None — next")}`;
+  if (k === "weighday") body = `<h2>Which day is your weigh-in day?</h2><p class="muted" style="margin-top:0">Your weekly recap lines up with it.</p>
+    <label>Weigh-in day<select data-ob="weighDay">${DAYS.map((x, n) => `<option value="${n}"${n === +d.weighDay ? " selected" : ""}>${x}</option>`).join("")}</select></label>${next()}`;
+  if (k === "why") body = `<h2>Why does this matter to you?</h2><p class="muted" style="margin-top:0">Optional. We'll show it on Home on tough days.</p>
+    <label>Your reason<textarea data-ob="why" rows="3" maxlength="200" placeholder="e.g. keep up with my kids">${esc(d.why || "")}</textarea></label>${next("Next", "Skip")}`;
+  if (k === "summary") { const t = startTargets(obData()), cg = CGOALS.find(x => x.id === t.coach);
+    body = `<h2>Your starting plan</h2>
+      <div class="grid2" style="margin:12px 0">
+        <div class="tile"><div class="label">Calories / day</div><div class="value n">${t.cal.toLocaleString()}</div><div class="sub" style="white-space:normal">${d.main === "lose" ? `about 500 under your ${t.maint.toLocaleString()} maintenance` : d.main === "muscle" ? "a small surplus over maintenance" : "about maintenance"}</div></div>
+        <div class="tile"><div class="label">Protein / day</div><div class="value n">${t.protein}<small>g</small></div></div>
+        <div class="tile"><div class="label">Cardio / week</div><div class="value n">${t.cardio}<small>min</small></div></div>
+        <div class="tile"><div class="label">First Coach goal</div><div class="value" style="font-size:18px;font-weight:800">${esc(cg.name)}</div><div class="sub">Coach tab</div></div></div>
+      <p class="faint">Estimates to start from — change any of them in Settings.</p>
+      <button type="button" class="btn block" data-act="obFinish">Let's go</button>`; }
+  return `<div class="card hero">
+      <div style="display:flex;align-items:center;gap:10px">${ob.i ? `<button type="button" class="icon-btn" data-act="obBack" aria-label="Back">‹</button>` : ""}
+        <div style="flex:1"><div class="faint" style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Step ${ob.i + 1} of ${st.length}</div>
+        <div class="bar" style="margin-top:6px"><span style="width:${Math.round((ob.i + 1) / st.length * 100)}%"></span></div></div></div>
+      <div style="margin-top:16px">${body}</div></div>
+    ${k === "welcome" ? `<div class="card"><h2>Already have a backup?</h2><p class="muted" style="margin-top:0">Load a backup file saved from this app (from Files or iCloud Drive) to bring all your data back.</p>${RESTORE_BTN("Restore from backup")}</div>` : ""}`;
+}
+// answers in pounds and inches
+function obData() {
+  const d = { ...ob.d }, toLb = v => v == null ? null : d.units === "kg" ? kgToLb(v) : v;
+  d.weightLb = toLb(num(d.weight)); d.goalLb = toLb(num(d.goal));
+  d.heightIn = d.units === "kg" ? (num(d.cm) ? num(d.cm) / 2.54 : null) : num(d.ft) ? num(d.ft) * 12 + (num(d.inch) || 0) : null;
+  d.age = num(d.age);
+  return d;
+}
+function obCheck(k) {
+  const d = obData();
+  if (k === "goalw" && !(d.goalLb > 50 && d.goalLb < 700)) return "Enter a goal weight.";
+  if (k === "about" && !(d.weightLb > 50 && d.weightLb < 700)) return "Enter your current weight.";
+  return null;
+}
+function obFinish() {
+  const s = db.settings, d = obData(), t = startTargets(d), lb = Math.round(d.weightLb * 10) / 10;
+  Object.assign(s, { name: String(d.name || "").trim(), startWeight: lb, startDate: today(), units: d.units, sex: d.sex === "female" ? "female" : "male",
+    weighDay: +d.weighDay, mainGoal: d.main || "fitter", extraGoals: d.extras.slice(0, 2), activity: d.activity || "light", experience: d.exp || "some", why: String(d.why || "").trim(),
+    calorieTarget: t.cal, proteinTarget: t.protein, cardioTarget: t.cardio, coachMain: t.coach, protein150: true });
+  if (d.heightIn) s.heightIn = Math.round(d.heightIn);
+  if (d.age) s.age = d.age;
+  s.goals = d.main === "lose" && d.goalLb ? [Math.round(d.goalLb)] : [Math.round(lb)];
+  s.limits = { knee: d.limits.includes("knee"), back: d.limits.includes("back") };
+  s.shouldersCleared = !d.limits.includes("upper"); if (!s.shouldersCleared) s.lockMode = "push"; s.lockModeSet = true;
+  if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: lb, type: "other", note: "Starting weight", src: "manual" });
+  s.setupDone = true; save(); current = "home"; ob = { i: 0, d: { units: "lb", sex: "male", weighDay: 5, extras: [], limits: [] } };
+  render(); toast(s.name ? `Welcome, ${s.name}!` : "You're all set");
 }
 // =====================================================================
 // Streak: days in a row with anything logged
@@ -1558,12 +1649,18 @@ function viewHome() {
       <div><div class="label">Current weight</div>
         <div class="big n">${last ? r1(last.w) : "—"}<small>lb</small></div>
         <div class="faint">${last ? `${TYPES[last.type]} · ${fmtDay(last.date)}` : "No weigh-ins yet"}</div></div>
-      <div class="lost"><div class="label">Lost since ${fmtD(s.startDate)}</div>
-        <div class="v">${lost != null ? (lost >= 0 ? "−" : "+") + r1(Math.abs(lost)) : "—"}</div><div class="faint">from ${r1(s.startWeight)} lb</div></div>
+      ${!last || db.weights.every(w => w.date === s.startDate) ? `<div class="lost"><div class="label">Starting weight</div>
+        <div class="v">${r1(s.startWeight)}</div><div class="faint">${fmtD(s.startDate)} — day one</div></div>`
+      : `<div class="lost"><div class="label">Lost since ${fmtD(s.startDate)}</div>
+        <div class="v">${lost != null ? (lost >= 0 ? "−" : "+") + r1(Math.abs(lost)) : "—"}</div><div class="faint">from ${r1(s.startWeight)} lb</div></div>`}
     </div>
     <div class="bar" style="margin-top:16px"><span style="width:${pctAll}%"></span></div>
     <div class="faint" style="margin-top:6px;display:flex;justify-content:space-between"><span>${r1(s.startWeight)}</span><span>${Math.round(pctAll)}% to ${finalG}</span><span>${finalG}</span></div>
   </div>
+  ${(() => { const why = (s.why || "").trim(); if (!why) return "";
+    const wk = db.weights.filter(w => w.type === "wake").sort((a, b) => a.date.localeCompare(b.date)), y = addDays(t, -1), ye = dayEnergy(y), st = streak();
+    const tough = (wk.length > 1 && wk[wk.length - 1].w > wk[wk.length - 2].w) || (ye.n && ye.in - ye.out > 300) || (!st.n && activityDays().size > 0);
+    return tough ? `<div class="banner" style="font-size:15px">💬 <b>Remember why:</b> “${esc(why)}”</div>` : ""; })()}
   ${(() => { const st = streak(); return `<div class="card streak" style="${st.n ? "" : "opacity:.85"}"><span style="color:${st.n ? "var(--accent)" : "var(--ink-3)"}">${FLAME}</span>
     <div style="flex:1"><div><span class="v">${st.n}</span> <b>day${st.n === 1 ? "" : "s"} in a row</b></div>
       <div class="faint">${st.n ? (st.todayDone ? "Logged today — nice." : "Log anything today to keep it going.") : "Log anything today to start a streak."}${st.best > 1 ? ` Best: ${st.best} days.` : ""}</div></div></div>`; })()}
@@ -2216,7 +2313,7 @@ let energyBack = false; // opened from a Home calorie card
 function energyCard() {
   const s = db.settings, t = today(), e = dayEnergy(t), net = e.in - e.out, bb = baseBurn();
   const days = [...Array(7)].map((_, i) => addDays(t, -i)).map(d => ({ d, ...dayEnergy(d) })).filter(x => x.n);
-  return `<div class="card" id="energyCard"><h2>Calories in vs out <small>today</small></h2>
+  return `<div class="card" id="energyCard"><h2>Calories in vs out <small>${s.calorieTarget ? `target ${s.calorieTarget.toLocaleString()} / day` : "today"}</small></h2>
     ${energyBack ? `<button class="btn ghost small" data-act="energyBack" style="margin:0 0 12px">‹ Back to Home</button>` : ""}
     <div class="grid2" style="margin:0">
       <div><div class="faint">In (food)</div><div class="n" style="font-size:34px;font-weight:800">${e.in}</div></div>
@@ -2730,6 +2827,12 @@ const CGOALS = [
     ["Return", ["Back to full training once cleared.", "Keep 1–2 PT exercises in your warm-up.", "Unlock upper-body work in Settings only when cleared."], "Retest pain monthly and note what helps."]] }
 ];
 let coachSel = null;
+// The main Coach goal: chosen at setup, else the first one you started. Extras add small pieces to its weekly plan.
+const mainCoachId = () => { const g = coach().goals, m = db.settings.coachMain; return m && g[m] ? m : Object.keys(g)[0] || m || null; };
+function rebuildMain() {
+  const id = mainCoachId(), gs = id && coach().goals[id], g = CGOALS.find(x => x.id === id); if (!gs || !gs.weeks) return;
+  for (const k of Object.keys(gs.weeks)) if (k >= mondayOf(today())) rebuildWeek(g, gs, k);
+}
 // What each step asks you to do, checked off from your logs since the step began.
 // weigh:n wake weigh-ins · meals:n days logged · protein:n days at goal · cardioWk:m minutes in one week · cardio:n / run:n sessions
 // strength:n / core:n days · plan:n planned workouts done · test:key:value a retest result · retest any retest
@@ -2865,7 +2968,7 @@ function levelCard(g, gs) {
     return `<div class="lvl-row"><div><b>${esc(name)}: ${esc(testVal(k, v))}</b> · ${LEVELS[x.lv]} · ${x.target == null ? `<span style="color:var(--good)">top level ✓</span>` : `Next: ${esc(testVal(k, x.target))}, ${esc(testGap(k, x.gap))}`}</div>
       <div class="bar ${x.lv === 2 ? "good" : ""}" style="margin-top:6px"><span style="width:${Math.round(x.frac * 100)}%"></span></div></div>`;
   }).join("");
-  return `<div class="card"><h2>Your level <small>${esc(g.name)}</small></h2>
+  return `<div class="card"><h2>Your level <small>${g.id === mainCoachId() ? "Main · " : ""}${esc(g.name)}</small></h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="st ${["warn", "none", "good"][last.level]}"><i>${["1", "2", "3"][last.level]}</i>${LEVELS[last.level]}</span><span class="tag">Step ${gs.stage} of 4</span></div>
     ${rows}
     <p class="faint" style="margin:12px 0 0">Last test ${fmtD(last.date)} · Next retest ${canUnlock ? "<b>due now</b>" : `${fmtD(due)} (in ${dd} day${dd === 1 ? "" : "s"})`}${gs.tests.length > 1 ? ` · First test ${fmtD(gs.tests[0].date)} (${LEVELS[gs.tests[0].level]})` : ""}</p>
@@ -2892,7 +2995,9 @@ function readTests(g, f) {
 }
 function viewCoach() {
   const c = coach(), s = db.settings, active = CGOALS.filter(g => c.goals[g.id]);
-  const chips = `<div class="chips">${CGOALS.map(g => `<button class="chip${coachSel === g.id ? " on" : ""}" data-act="coachSel" data-id="${g.id}">${c.goals[g.id] ? "● " : ""}${esc(g.name)}${goalLocked(g) ? " 🔒" : ""}</button>`).join("")}</div>`;
+  const main = mainCoachId(), extras = db.settings.extraGoals || [];
+  const chips = `<div class="chips">${CGOALS.map(g => `<button class="chip${coachSel === g.id ? " on" : ""}" data-act="coachSel" data-id="${g.id}">${g.id === main ? `<span class="tag" style="margin-right:6px">Main</span>` : c.goals[g.id] ? "● " : ""}${esc(g.name)}${extras.includes(g.id) && g.id !== main ? " <small>+ extra</small>" : ""}${goalLocked(g) ? " 🔒" : ""}</button>`).join("")}</div>
+    ${extras.length ? `<p class="faint" style="margin:0">Extras in your main plan: ${extras.map(x => esc(EXTRA_GOALS[x])).join(", ")} — change them in Settings.</p>` : ""}`;
   let body = "";
   const g = CGOALS.find(x => x.id === coachSel);
   if (g) body = goalLocked(g) ? `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">${esc(g.name)} is locked</h2>
@@ -2934,8 +3039,8 @@ function intake(g) {
         <label>Age<input type="number" name="age" min="13" max="100" value="${s.age ?? ""}" inputmode="numeric" required></label>
         <label>Norms for<select name="sex"><option value="male"${s.sex !== "female" ? " selected" : ""}>Male</option><option value="female"${s.sex === "female" ? " selected" : ""}>Female</option></select></label></div>` : ""}
       <div class="row">
-        <label>Days per week available<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === 3 ? " selected" : ""}>${d}</option>`).join("")}</select></label>
-        <label>How long per workout?<select name="minutes">${SESSION_MIN.map(m => `<option value="${m}"${m === (30) ? " selected" : ""}>${m}${m === 75 ? "+" : ""} min</option>`).join("")}</select></label>
+        <label>Days per week available<select name="days">${[1, 2, 3, 4, 5, 6, 7].map(d => `<option${d === (s.experience === "very" ? 4 : 3) ? " selected" : ""}>${d}</option>`).join("")}</select></label>
+        <label>How long per workout?<select name="minutes">${SESSION_MIN.map(m => `<option value="${m}"${m === ({ new: 30, some: 45, very: 45 }[s.experience] || 30) ? " selected" : ""}>${m}${m === 75 ? "+" : ""} min</option>`).join("")}</select></label>
         <label>Target date<input type="date" name="target" value="${addDays(today(), 84)}" min="${today()}"></label></div>
       ${equipFields()}
       <label>Other injuries or notes<textarea name="injuries" rows="2" placeholder="e.g. left shoulder — or leave blank"></textarea></label>
@@ -2985,6 +3090,7 @@ const coachForms = {
     const vals = readTests(g, f), level = levelFrom(vals);
     coach().goals[g.id] = { started: today(), days: +f.get("days") || 3, minutes: +f.get("minutes") || 30, target: f.get("target") || null, injuries: String(f.get("injuries") || "").trim(),
       stage: level + 1, unlockedAt: today(), tests: [{ date: today(), vals, level }] };
+    if (!db.settings.coachMain || !coach().goals[db.settings.coachMain]) db.settings.coachMain = Object.keys(coach().goals).length === 1 ? g.id : mainCoachId();
     // Pull-Up Progress: rep targets start from your current max at step 1
     if (g.id === "pullup" && vals.pullups >= 1) Object.assign(coach().goals[g.id], { stage: 1, pullBase: vals.pullups });
     save(); planReady = g.id; render();
@@ -3196,8 +3302,24 @@ function buildWeek(g, gs, start, p, note, tag = {}) {
     else { const walk = walkGoal && D < 7 && i % 2 === 0 && i !== 6;
       days.push({ date, train: false, kind: walk ? "walk" : "rest", title: walk ? "Easy walk" : "Rest", cardio: walk ? { type: "Walk (outdoor)", min: 20, intensity: "easy", how: "Optional easy walk, 15–20 min" } : null, items: [], src: [], done: false, logged: null }); }
   }
+  if (g.id === mainCoachId()) addExtras(days, ctx, lvl);
   const lastTrain = days.filter(d => d.train).pop(); if (tag.deload && lastTrain) lastTrain.retest = true;
   return { start, p, note, lvl, stage: gs.stage || 1, days, built: today(), block: tag.block ?? null, wk: tag.wk ?? null, deload: !!tag.deload };
+}
+// Extras (secondary goals) add a small piece to the main plan: a finisher on a training day, or one short session on a rest day
+function addExtras(days, ctx, lvl) {
+  const trains = days.filter(d => d.train && d.items.length), rests = days.filter(d => !d.train && d.kind === "rest");
+  const fin = (d, keys, label) => { const k = keys.find(x => exOk(x, ctx)); if (!d || !k) return; const it = dose(k, Math.min(lvl, 1), 0, 0.67, ctx); it.name = `${label}: ${it.name}`; it.extra = true; d.items.push(it); };
+  const session = (title, kind, items, cardio) => { const d = rests.shift(); if (!d) return; Object.assign(d, { train: true, kind, title, items, cardio: cardio || null, extra: true }); };
+  for (const x of (db.settings.extraGoals || []).slice(0, 2)) {
+    if (x === "core") { fin(trains[0], ["plank", "deadbug"], "Core finisher"); fin(trains[2] || trains[1], ["deadbug", "sideplank", "plank"], "Core finisher"); }
+    if (x === "back") fin(trains[1] || trains[0], ["superman", "birddog"], "Back finisher");
+    if (x === "balance") fin(trains[1] || trains[0], ["onelegstand"], "Balance finisher");
+    if (x === "pullup") fin(trains[0], ["hang"], "Grip finisher");
+    if (x === "mobility") session("Mobility (extra)", "mobility", strengthItems(STRENGTH_SLOTS.mobility, 0, 0, ctx));
+    if (x === "heart") session("Easy cardio (extra)", "steady", [], { type: cardioPick("steady", ctx)[0], min: 20, intensity: "easy", how: "Easy, conversational pace" });
+    if (x === "mile" && !ctx.limits.knee) session("Easy run (extra)", "easyrun", [], { type: "Running / jogging", min: 20, intensity: "easy", how: lvl === 0 ? "Run/walk: 2 min jog, 1 min walk" : "Easy, conversational pace" });
+  }
 }
 const weekStats = w => { const tr = w.days.filter(d => d.train); return { done: tr.filter(d => d.done).length, total: tr.length }; };
 function wakeAvg(from, to) { const v = db.weights.filter(w => w.type === "wake" && w.date >= from && w.date <= to).map(w => w.w); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
@@ -3886,13 +4008,13 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : syncGuide != null ? syncGuideSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; syncGuide = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : syncGuide != null ? syncGuideSheet() : pasteSync ? pasteSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; syncGuide = null; pasteSync = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
   if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
   if (logCardio && logCardio.step === "form") syncCardioForm($("form", sh));
-  if (editing || openGuide || openScan || logCardio || syncGuide != null) { sh.scrollTop = 0; return; }
+  if (editing || openGuide || openScan || logCardio || syncGuide != null || pasteSync) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -3957,6 +4079,18 @@ function viewSettings() {
       </div>
       <p class="faint" style="margin-top:-4px">Resting burn is estimated from your weight, height and age (male formula) unless you enter your own daily number; logged exercise is added on top.</p>
       <label>Upper-body lock<select name="lockMode">${Object.entries(LOCK_LABEL).map(([k, l]) => `<option value="${k}"${lockMode() === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+      <div class="chips">${Object.entries({ knee: "Knee limit", back: "Lower-back limit" }).map(([k, l]) => `<label class="chip chk"><input type="checkbox" name="lim" value="${k}"${(s.limits || {})[k] ? " checked" : ""}>${l}</label>`).join("")}</div>
+      <h4 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:18px 0 8px">Your goals</h4>
+      <div class="row">
+        <label>Main goal<select name="mainGoal">${Object.entries(MAIN_GOALS).map(([k, [l]]) => `<option value="${k}"${(s.mainGoal || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>Daily calorie target<input type="number" name="calorieTarget" min="800" max="6000" value="${s.calorieTarget ?? ""}" inputmode="numeric" placeholder="optional"></label></div>
+      <p class="muted" style="margin:4px 0 6px">Extras (up to two) — small add-ons to your Coach plan</p>
+      <div class="chips">${Object.entries(EXTRA_GOALS).map(([k, l]) => `<label class="chip chk"><input type="checkbox" name="extra" value="${k}"${(s.extraGoals || []).includes(k) ? " checked" : ""}>${l}</label>`).join("")}</div>
+      <div class="row">
+        <label>Activity level<select name="activity">${Object.entries(ACTIVITY).map(([k, [l]]) => `<option value="${k}"${(s.activity || "light") === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>Experience<select name="experience">${Object.entries(EXPERIENCE).map(([k, [l]]) => `<option value="${k}"${(s.experience || "some") === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>Units<select name="units"><option value="lb"${s.units !== "kg" ? " selected" : ""}>lb</option><option value="kg"${s.units === "kg" ? " selected" : ""}>kg</option></select></label></div>
+      <label>Why it matters (shown on Home on tough days)<textarea name="why" rows="2" maxlength="200" placeholder="optional">${esc(s.why || "")}</textarea></label>
       <button class="btn block" style="margin-top:12px">Save these settings</button>
     </form>
   </div>
@@ -4020,23 +4154,6 @@ const forms = {
     if (err) { alert(err); return false; }
     Object.assign(item, e); editing = null; save(); toast("Changes saved");
   },
-  setup(f) {
-    const s = db.settings, sw = num(f.get("startWeight"));
-    const goals = String(f.get("goals")).split(/[,\s]+/).map(num).filter(g => g != null && g > 50 && g < 700);
-    if (sw == null || sw < 50 || sw > 700) { alert("Enter your starting weight in pounds."); return false; }
-    if (!goals.length) { alert("Enter at least one goal weight in pounds."); return false; }
-    s.name = String(f.get("name") || "").trim(); s.startWeight = sw; s.startDate = f.get("startDate") || today();
-    const ft = num(f.get("ft")), inch = num(f.get("in"));
-    if (ft) s.heightIn = ft * 12 + (inch || 0);
-    if (num(f.get("age"))) s.age = num(f.get("age"));
-    s.sex = f.get("sex") === "female" ? "female" : "male";
-    s.weighDay = f.get("weighDay") != null ? +f.get("weighDay") : 5;
-    s.goals = [...new Set(goals)].sort((a, b) => b - a);
-    s.shouldersCleared = f.get("injury") === "no"; if (!s.shouldersCleared) s.lockMode = f.get("injury"); s.lockModeSet = true;
-    if (!db.weights.length) db.weights.push({ id: uid(), date: s.startDate, w: sw, type: "other", note: "Starting weight", src: "manual" });
-    s.setupDone = true; save(); current = "home";
-    toast(s.name ? `Welcome, ${s.name}!` : "You're all set");
-  },
   exlists(f) {
     for (const a of Object.keys(AREAS)) {
       const seen = new Set();
@@ -4065,6 +4182,12 @@ const forms = {
     const lm = f.get("lockMode") || lockMode(), cleared = lm === "off";
     if (cleared && !s.shouldersCleared) s.clearedDate = today();
     s.shouldersCleared = cleared; if (!cleared) s.lockMode = lm; s.lockModeSet = true;
+    s.limits = { ...(s.limits || {}), knee: f.getAll("lim").includes("knee"), back: f.getAll("lim").includes("back") };
+    const extras = f.getAll("extra").slice(0, 2), before = JSON.stringify(s.extraGoals || []);
+    Object.assign(s, { mainGoal: f.get("mainGoal") || s.mainGoal, extraGoals: extras, activity: f.get("activity") || s.activity, experience: f.get("experience") || s.experience,
+      units: f.get("units") === "kg" ? "kg" : "lb", why: String(f.get("why") || "").trim(), calorieTarget: num(f.get("calorieTarget")) || null });
+    if (f.getAll("extra").length > 2) toast("Kept the first two extras");
+    if (JSON.stringify(extras) !== before) rebuildMain();
     save(); toast("Settings saved");
   }
 };
@@ -4078,6 +4201,7 @@ document.addEventListener("submit", e => {
 const syncExList = el => { if ((el.name === "type" || el.name === "where") && el.form) syncCardioForm(el.form); const ex = el.name === "area" && el.form && el.form.elements.ex; if (ex) ex.setAttribute("list", "dl-" + el.value); };
 document.addEventListener("input", e => {
   syncExList(e.target);
+  if (e.target.dataset && e.target.dataset.ob) { ob.d[e.target.dataset.ob] = e.target.value; return; }
   if (qaInput(e.target)) return;
   if (draftInput(e.target)) return;
   if (e.target.name === "name" && e.target.closest("form[data-form=lab]")) {
@@ -4087,6 +4211,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   syncExList(e.target);
+  if (e.target.dataset && e.target.dataset.ob) { ob.d[e.target.dataset.ob] = e.target.value; return; }
   if (e.target.id === "bodyMetric") { bMetric = e.target.value; render(); return; }
   if (e.target.id === "compMetric") { cMetric = e.target.value; render(); return; }
   if (e.target.type === "checkbox" && e.target.dataset.draft) { draftInput(e.target); return; }
@@ -4114,12 +4239,12 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("#scanner")) { stopScan(); return; }
   if (e.key === "Escape" && $("#recap")) { $("[data-act=closeRecap]").click(); return; }
   if (e.key === "Escape" && openGuide && !editing) { openGuide = null; renderSheet(); return; }
-  if (e.key === "Escape" && syncGuide != null && !editing) { syncGuide = null; renderSheet(); return; }
+  if (e.key === "Escape" && (syncGuide != null || pasteSync) && !editing) { syncGuide = null; pasteSync = null; renderSheet(); return; }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); energyBack = false; syncGuide = null; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); energyBack = false; syncGuide = null; pasteSync = null; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const ct = e.target.closest(".foldable > h2"); if (ct && !e.target.closest("a, button, select, input")) { toggleCard(ct); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
@@ -4184,7 +4309,7 @@ document.addEventListener("click", e => {
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else if (syncGuide != null) syncGuide = null; else openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else if (syncGuide != null) syncGuide = null; else if (pasteSync) pasteSync = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") {
     coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render();
@@ -4292,8 +4417,32 @@ document.addEventListener("click", e => {
   }
   if (act === "testSync") { location.href = location.pathname + "?w=208.6&bf=24.1&bmi=29.1&lean=158.3&d=" + today(); return; }
   if (act === "export") { exportBackup(); return; }
-  if (act === "clipSync") { if (syncGuide != null) { syncGuide = null; renderSheet(); } clipboardSync(); return; }
-  if (act === "syncGuide") { syncGuide = 0; renderSheet(); return; }
+  if (act === "obPick") { ob.d[el.dataset.f] = el.dataset.v; if (el.dataset.f === "main") ob.d.extras = ob.d.extras.filter(x => x !== MAIN_COACH[el.dataset.v]); ob.i++; render(); window.scrollTo(0, 0); return; }
+  if (act === "obToggle") { const a = ob.d[el.dataset.f], v = el.dataset.v, i = a.indexOf(v);
+    if (i >= 0) a.splice(i, 1); else { if (el.dataset.f === "extras" && a.length >= 2) { toast("Pick up to two"); return; } a.push(v); } render(); return; }
+  if (act === "obUnits") { const d = ob.d, to = el.dataset.v; if (to === d.units) return;
+    const cv = v => num(v) == null ? v : String(Math.round((to === "kg" ? num(v) / 2.2046 : num(v) * 2.2046) * 10) / 10);
+    d.weight = cv(d.weight); d.goal = cv(d.goal);
+    if (to === "kg" && num(d.ft)) d.cm = String(Math.round((num(d.ft) * 12 + (num(d.inch) || 0)) * 2.54));
+    if (to === "lb" && num(d.cm)) { const inch = Math.round(num(d.cm) / 2.54); d.ft = String(Math.floor(inch / 12)); d.inch = String(inch % 12); }
+    d.units = to; render(); return; }
+  if (act === "obNext") { const k = obSteps()[ob.i];
+    if (el.dataset.skip) { if (k === "welcome") ob.d.name = ""; if (k === "extras") ob.d.extras = []; if (k === "why") ob.d.why = ""; }
+    else { const err = obCheck(k); if (err) { toast(err); return; } }
+    ob.i++; render(); window.scrollTo(0, 0); return; }
+  if (act === "obBack") { ob.i = Math.max(0, ob.i - 1); render(); window.scrollTo(0, 0); return; }
+  if (act === "obFinish") { obFinish(); return; }
+  if (act === "clipSync") { syncGuide = null; if (!db.settings.lastSync && !el.closest("#sheet")) syncGuide = 0; else pasteSync = {}; renderSheet(); return; }
+  if (act === "pasteOpen") { syncGuide = null; pasteSync = {}; renderSheet(); return; }
+  if (act === "pasteRead") {
+    let p = null; try { p = navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : null; } catch (err) {}
+    if (!p) { pasteSync = { manual: true, msg: "This browser can't read the clipboard — paste into the box below." }; renderSheet(); return; }
+    p.then(t => { setPasteText(t || ""); renderSheet(); }, () => { pasteSync = { manual: true, msg: "Couldn't read the clipboard — press and hold in the box below, tap Paste, then Preview." }; renderSheet(); });
+    return;
+  }
+  if (act === "pasteBox") { const ta = $("[data-paste]"); setPasteText(ta ? ta.value : ""); if (!pasteSync.rows) pasteSync.manual = true; renderSheet(); return; }
+  if (act === "pasteConfirm") { const ps = pasteSync; if (!ps || !ps.params) return; const msg = importSync(ps.params); pasteSync = null; renderSheet(); render(); toast(msg); return; }
+  if (act === "syncGuide") { pasteSync = null; syncGuide = 0; renderSheet(); return; }
   if (act === "syncStep") { syncGuide = Math.max(0, Math.min(3, +el.dataset.v)); renderSheet(); return; }
   if (act === "wipe") {
     if (confirm("Erase ALL your data on this device? This can't be undone.") && confirm("Really erase everything?")) {
