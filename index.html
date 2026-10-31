@@ -613,7 +613,16 @@ function upsertWeight(entry) {
 // Apple Health sync via link (from the iPhone Shortcut)
 // =====================================================================
 // Imports w (lb), bf (%), bmi, lean, mm (muscle lb), d (date), t (type). Empty or junk values are skipped.
-// Workout fields: wt (type), wm (minutes), wc (calories), whr (average heart rate). Empty values are skipped.
+// Workout fields: wt (type), wm (minutes), wc (calories), whr (average heart rate), wd (workout date, else d), ws (source app, e.g. Peloton). Empty values are skipped.
+// Minutes as Shortcuts may write them: 45 · 45.5 min · 1 hr 5 min · 1:05:00 (h:mm:ss) · 45:30 (mm:ss)
+function parseMinutes(v) {
+  const x = String(v ?? "").trim().toLowerCase(); if (!x) return null;
+  let m = x.match(/^(\d+):(\d{1,2}):(\d{1,2})$/); if (m) return +m[1] * 60 + +m[2] + +m[3] / 60;
+  m = x.match(/^(\d+):(\d{1,2})$/); if (m) return +m[1] + +m[2] / 60;
+  const h = x.match(/([\d.]+)\s*(h|hr|hrs|hour|hours)\b/), mi = x.match(/([\d.]+)\s*(m|min|mins|minute|minutes)\b/), sc = x.match(/([\d.]+)\s*(s|sec|secs|second|seconds)\b/);
+  if (h || mi || sc) return (h ? +h[1] * 60 : 0) + (mi ? +mi[1] : 0) + (sc ? +sc[1] / 60 : 0);
+  return num(x);
+}
 function healthWorkoutType(t) {
   const x = String(t || "").toLowerCase();
   const rules = [[/hiit|high.?intensity|interval/, "HIIT"], [/stair/, "StairMaster"], [/hik/, "Hiking"], [/walk/, "Walk (outdoor)"], [/run|jog/, "Running / jogging"],
@@ -625,10 +634,12 @@ function healthWorkoutType(t) {
 }
 function importWorkout(p, date) {
   const raw = k => String(p.get(k) ?? "").trim(), get = k => raw(k) === "" ? null : num(raw(k));
-  const wt = raw("wt"), wm = get("wm"), wc = get("wc"), whr = get("whr");
+  const wt = raw("wt"), ws = raw("ws"), wm = parseMinutes(raw("wm")), wc = num(raw("wc").replace(/(\d),(\d{3})\b/g, "$1$2")), whr = get("whr");
+  const wd = (raw("wd").match(/\d{4}-\d{2}-\d{2}/) || [])[0]; if (wd) date = wd;
   if (!wt && wm == null && wc == null && whr == null) return null;
   if (wm == null || wm <= 0) return "Workout skipped (no minutes in the link)";
-  const type = healthWorkoutType(wt), e = { date, type, min: Math.round(wm), src: "health", intensity: "moderate" };
+  // Peloton rides reach Health as plain "Cycling"; the source app tells them apart from outdoor rides
+  const type = healthWorkoutType(`${wt} ${/peloton/i.test(ws) && /cycl|bik|ride/i.test(wt) ? "peloton" : ""}`), e = { date, type, min: Math.round(wm), src: "health", intensity: "moderate" };
   if (type === "Custom" && wt) e.name = wt;
   if (wc != null && wc > 0 && wc < 5000) e.kcal = Math.round(wc);
   if (whr != null && whr >= 40 && whr <= 220) e.hr = Math.round(whr);
@@ -3913,7 +3924,7 @@ function viewSettings() {
     <button class="btn secondary block" data-act="syncGuide" style="margin-bottom:14px">Set it up step by step</button>
     <p class="faint" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
     <code class="url">${esc(appUrl)}?w=…&amp;bf=…&amp;bmi=…&amp;lean=…&amp;d=…</code>
-    <p class="faint" style="margin-top:-4px">Workouts can ride along (or come on their own): <b>wt</b> = workout type (e.g. Walking, Running, Cycling), <b>wm</b> = minutes, <b>wc</b> = calories, <b>whr</b> = average heart rate. Example: <code>?wt=Walking&amp;wm=42&amp;wc=310&amp;whr=118</code>. Empty values are skipped; a workout with calories uses that number instead of an estimate.</p>
+    <p class="faint" style="margin-top:-4px">Workouts can ride along (or come on their own): <b>wt</b> = workout type (e.g. Walking, Running, Cycling), <b>wm</b> = minutes, <b>wc</b> = calories, <b>whr</b> = average heart rate, <b>wd</b> = workout date (YYYY-MM-DD, if it isn't the same day as <b>d</b>), <b>ws</b> = source app (Peloton rides then count as indoor bike). Example: <code>?wt=Cycling&amp;ws=Peloton&amp;wm=30&amp;wc=310&amp;whr=138&amp;wd=2026-11-01</code>. Empty values are skipped; a workout with calories uses that number instead of an estimate.</p>
     <div class="btn-row"><button class="btn secondary small" data-act="copyUrl">Copy app address</button>
     <button class="btn ghost small" data-act="testSync">Test with sample data</button></div>
     <p class="faint">${s.lastSync ? "Last sync: " + fmtDT(s.lastSync) : "No syncs yet."}</p>
