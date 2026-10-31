@@ -690,6 +690,39 @@ async function exportBackup() {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   done();
 }
+// Step-by-step setup for the optional Apple Health sync
+const SHORTCUT_URL = "https://www.icloud.com/shortcuts/211d1f951aa14386b5ed6fa8a5ade2af";
+const SYNC_LINE = "Works with Renpho, Withings and other scales that connect to Apple Health.";
+let syncGuide = null; // step 0–3 while the guide is open
+const SYNC_STEPS = [
+  ["Let your scale app share with Health", `<p>Open your scale's app (Renpho, Withings, …) and turn on its Apple Health connection. Make sure it's allowed to write <b>Weight</b> and <b>Body Fat Percentage</b>.</p>
+    <p class="faint">In the Health app: tap your profile picture → Apps (or Privacy → Apps) → your scale app, and turn those on.</p>`],
+  ["Weigh in", `<p>Step on the scale <b>barefoot</b>, with the scale app open on your phone, so the reading (including body fat) is saved and sent to Health.</p>`],
+  ["Install the Momentum shortcut", `<p>The shortcut reads your latest numbers from Health and copies a sync link for Momentum.</p>
+    <a class="btn block" href="${SHORTCUT_URL}" target="_blank" rel="noopener" style="text-decoration:none;display:flex;align-items:center;justify-content:center">Install the Momentum shortcut</a>
+    <p class="faint">It opens in the Shortcuts app — tap <b>Add Shortcut</b>. If Health asks for permission when it first runs, tap Allow.</p>`],
+  ["Sync after each weigh-in", `<ol style="padding-left:20px;margin:0 0 12px"><li>After weighing in, run the <b>Momentum</b> shortcut.</li><li>Open Momentum.</li><li>Tap <b>Sync from Health</b>, and paste if asked.</li></ol>
+    <button type="button" class="btn block" data-act="clipSync">⟳ Sync from Health now</button>`]
+];
+function syncGuideSheet() {
+  const i = syncGuide, [title, body] = SYNC_STEPS[i];
+  return `<div class="grab"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="faint" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:12px">Sync from Apple Health · Step ${i + 1} of 4</div><h3 style="margin:4px 0 0">${title}</h3></div>
+      <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
+    <div class="bar" style="margin:12px 0"><span style="width:${(i + 1) * 25}%"></span></div>
+    <div class="muted">${body}</div>
+    <div class="btn-row" style="margin-top:14px">${i ? `<button type="button" class="btn ghost" data-act="syncStep" data-v="${i - 1}" style="flex:1">‹ Back</button>` : ""}
+      ${i < 3 ? `<button type="button" class="btn" data-act="syncStep" data-v="${i + 1}" style="flex:2">Next ›</button>` : `<button type="button" class="btn secondary" data-act="closeSheet" style="flex:2">Done</button>`}</div>
+    <details style="margin-top:16px"><summary>Not working?</summary>
+      <ul class="faint" style="padding-left:18px;margin:6px 0 0">
+        <li><b>No body fat?</b> Socks block the scale's body-fat reading — weigh in barefoot on dry feet.</li>
+        <li><b>Old numbers?</b> Open the scale app after weighing in so it syncs to Health, then run the shortcut again.</li>
+        <li><b>Nothing found?</b> In the Health app, check that your scale app and the Shortcuts app both have permission for Weight and Body Fat Percentage.</li></ul></details>
+    <p class="faint" style="margin-top:14px">Optional — <b>Log a weigh-in</b> on the Weight tab is always the easiest way.</p>`;
+}
+const syncCard = () => `<div class="card"><h2>Sync from Apple Health <small>optional</small></h2>
+    <p class="muted" style="margin-top:0">${SYNC_LINE} Log a weigh-in above is the easiest way; this saves typing if your scale already sends readings to Health.</p>
+    <button class="btn secondary block" data-act="syncGuide">Set it up step by step</button></div>`;
 // "Sync from Health" button: read the link the Shortcut copied to the clipboard
 async function clipboardSync() {
   let text = "";
@@ -1348,12 +1381,14 @@ function go(tab, focus) {
 // =====================================================================
 const needsSetup = () => !db.settings.setupDone || !db.settings.startWeight;
 const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const isIPadOS = () => /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
+const isIOS = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) || isIPadOS();
+const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || isIPadOS();
 let browserOk = false;
 try { browserOk = localStorage.getItem(KEY + ".browserOk") === "1"; } catch (e) {}
 const showInstall = () => isPhone() && !isStandalone() && !browserOk;
 function viewInstall() {
-  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const ios = isIOS();
   const shareIcon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M12 3v13"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
   return `<div class="card hero" style="text-align:center">${document.querySelector("header .logo").outerHTML.replace('class="logo"', 'class="logo" style="width:84px;height:84px;margin:6px auto 10px;display:block"')}
     <div class="n" style="font-size:34px;font-weight:800;text-transform:uppercase;line-height:1">Momentum</div>
@@ -1650,6 +1685,7 @@ function viewWeight() {
       </form>
     </details>
   </div>
+  ${syncCard()}
   <div class="card">
     <h2>All weigh-ins</h2>
     ${all.length ? moreList([...all].reverse(), 30, w => `
@@ -3839,13 +3875,13 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : syncGuide != null ? syncGuideSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; syncGuide = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
   if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
   if (logCardio && logCardio.step === "form") syncCardioForm($("form", sh));
-  if (editing || openGuide || openScan || logCardio) { sh.scrollTop = 0; return; }
+  if (editing || openGuide || openScan || logCardio || syncGuide != null) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -3872,8 +3908,10 @@ function viewSettings() {
     <div class="theme-pick">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-opt${(db.settings.theme || "dark") === k ? " on" : ""}" data-act="theme" data-v="${k}" style="background:${t.bg};border-color:${(db.settings.theme || "dark") === k ? t.accent : t.card}">
       <span class="sw" style="background:${t.card}"><i style="background:${t.accent}"></i></span><b style="color:#F5F8FC">${t.name}</b><small style="color:${t.accent}">${(db.settings.theme || "dark") === k ? "✓ In use" : "Tap to use"}</small></button>`).join("")}</div></div>
   <div class="banner"><b>Your entries save automatically.</b> Anything you log — weigh-ins, meals, fasts, workouts, labs — is stored on this device the moment you tap Save or Add. The only button you need on this page is <b>Save these settings</b> after changing the profile and goals below. Use <b>Back up all my data</b> to keep a copy off this device.</div>
-  <div class="card"><h2>Apple Health sync</h2>
-    <p class="muted" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
+  <div class="card"><h2>Sync from Apple Health <small>optional</small></h2>
+    <p class="muted" style="margin-top:0">${SYNC_LINE}</p>
+    <button class="btn secondary block" data-act="syncGuide" style="margin-bottom:14px">Set it up step by step</button>
+    <p class="faint" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
     <code class="url">${esc(appUrl)}?w=…&amp;bf=…&amp;bmi=…&amp;lean=…&amp;d=…</code>
     <p class="faint" style="margin-top:-4px">Workouts can ride along (or come on their own): <b>wt</b> = workout type (e.g. Walking, Running, Cycling), <b>wm</b> = minutes, <b>wc</b> = calories, <b>whr</b> = average heart rate. Example: <code>?wt=Walking&amp;wm=42&amp;wc=310&amp;whr=118</code>. Empty values are skipped; a workout with calories uses that number instead of an estimate.</p>
     <div class="btn-row"><button class="btn secondary small" data-act="copyUrl">Copy app address</button>
@@ -4065,11 +4103,12 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("#scanner")) { stopScan(); return; }
   if (e.key === "Escape" && $("#recap")) { $("[data-act=closeRecap]").click(); return; }
   if (e.key === "Escape" && openGuide && !editing) { openGuide = null; renderSheet(); return; }
+  if (e.key === "Escape" && syncGuide != null && !editing) { syncGuide = null; renderSheet(); return; }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); energyBack = false; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); energyBack = false; syncGuide = null; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const ct = e.target.closest(".foldable > h2"); if (ct && !e.target.closest("a, button, select, input")) { toggleCard(ct); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
@@ -4134,7 +4173,7 @@ document.addEventListener("click", e => {
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else if (syncGuide != null) syncGuide = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") {
     coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render();
@@ -4242,7 +4281,9 @@ document.addEventListener("click", e => {
   }
   if (act === "testSync") { location.href = location.pathname + "?w=208.6&bf=24.1&bmi=29.1&lean=158.3&d=" + today(); return; }
   if (act === "export") { exportBackup(); return; }
-  if (act === "clipSync") { clipboardSync(); return; }
+  if (act === "clipSync") { if (syncGuide != null) { syncGuide = null; renderSheet(); } clipboardSync(); return; }
+  if (act === "syncGuide") { syncGuide = 0; renderSheet(); return; }
+  if (act === "syncStep") { syncGuide = Math.max(0, Math.min(3, +el.dataset.v)); renderSheet(); return; }
   if (act === "wipe") {
     if (confirm("Erase ALL your data on this device? This can't be undone.") && confirm("Really erase everything?")) {
       localStorage.removeItem(KEY); db = load(); db.weights = []; save(); render(); toast("All data erased");
