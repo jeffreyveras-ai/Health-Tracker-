@@ -1530,9 +1530,12 @@ function viewHome() {
     <button class="tile" data-act="openEnergy"><div class="label">Calories today</div>
       <div class="value n">${en.in.toLocaleString()}</div>
       <div class="sub ${en.n ? (en.in <= en.out ? "down" : "up") : ""}">${en.n ? `${Math.abs(en.out - en.in).toLocaleString()} ${en.in <= en.out ? "under" : "over"}` : "Tap to log food"}</div></button>
-    <button class="tile" data-act="openEnergy"><div class="label">Burned today</div>
-      <div class="value n">${en.out.toLocaleString()}</div>
-      <div class="sub" style="white-space:normal">${(en.out - en.ex).toLocaleString()} resting + ${en.ex.toLocaleString()} exercise</div></button>
+    ${(() => { const bb = baseBurn(), now = new Date(), frac = (now.getHours() * 60 + now.getMinutes()) / 1440, sofar = Math.round(bb.cal * frac);
+      return `<button class="tile" data-act="openEnergy"><div class="label">Burned today</div>
+      <div class="value n">${(sofar + en.ex).toLocaleString()}</div>
+      <div class="sub" style="white-space:normal">${sofar.toLocaleString()} resting so far + ${en.ex.toLocaleString()} exercise</div>
+      <div class="sub" style="white-space:normal">about ${en.out.toLocaleString()} by end of day</div>
+      <div class="sub" style="white-space:normal;font-size:11px">Resting: ${bb.cal.toLocaleString()}/day · ${esc(bb.src)}</div></button>`; })()}
     <button class="tile span2" data-tab="food"><div class="label">Protein today</div>
       <div class="value n">${en.protein}<small>/ ${s.proteinTarget} g</small></div>
       <div class="sub">${en.protein >= s.proteinTarget ? "Target hit 💪" : `${r1n(s.proteinTarget - en.protein)} g to go`}</div>
@@ -1928,10 +1931,10 @@ const bodyLb = () => { const l = latest(); return l ? l.w : db.settings.startWei
 function baseBurn() {
   const s = db.settings, lb = bodyLb(), kg = lb / 2.2046;
   const r = db.body.filter(x => x.bmr > 0).sort((a, b) => a.date.localeCompare(b.date)).pop();
-  if (r) return { cal: Math.round(r.bmr), how: `Renpho BMR from ${fmtD(r.date)}` };
-  if (s.burnOverride) return { cal: s.burnOverride, how: "your number from Settings" };
-  if (s.heightIn && s.age) return { cal: Math.round(10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + (s.sex === "female" ? -161 : 5)), how: "Mifflin-St Jeor BMR — add your Renpho BMR under Scale measurements to use it instead" };
-  return { cal: Math.round(lb * 11), how: "rough estimate — add your height and age in Settings for a better one" };
+  if (r) return { cal: Math.round(r.bmr), how: `Renpho BMR from ${fmtD(r.date)}`, src: `Renpho BMR (${fmtD(r.date)})` };
+  if (s.burnOverride) return { cal: s.burnOverride, how: "your number from Settings", src: "your Settings number — includes activity if that number did" };
+  if (s.heightIn && s.age) return { cal: Math.round(10 * kg + 6.25 * s.heightIn * 2.54 - 5 * s.age + (s.sex === "female" ? -161 : 5)), how: "Mifflin-St Jeor BMR — add your Renpho BMR under Scale measurements to use it instead", src: "BMR estimated from height, weight and age — no activity factor" };
+  return { cal: Math.round(lb * 11), how: "rough estimate — add your height and age in Settings for a better one", src: "rough estimate (11 cal per lb)" };
 }
 // Speed → MET, [upper bound (mph, exclusive), MET]. 2024 Compendium; * = 2011 edition or nearest band.
 const WALK_MET = [[2.5, 2.8], [2.8, 3.0], [3.5, 3.8], [4.0, 4.8], [4.5, 5.5], [5.0, 7.0], [Infinity, 8.3]];   // <2.5*, 17170, 17190, 17200, 17220, 17230, 5+*
