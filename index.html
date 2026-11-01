@@ -123,6 +123,7 @@ main { max-width: 640px; margin: 0 auto; padding: 6px 16px 24px; }
 .lost .v { font-family: var(--num); font-size: 36px; font-weight: 800; color: var(--good); line-height: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
 .grid2 > .span2 { grid-column: 1 / -1; }
+.big-action { min-height: 60px; font-size: 18px; margin-bottom: 14px; }
 .tile {
   background: var(--card); border-radius: var(--radius); padding: 14px; min-width: 0; text-align: left;
   border: 0; color: var(--ink); font: inherit; display: block; width: 100%; cursor: pointer;
@@ -400,7 +401,7 @@ canvas.confetti { position: fixed; inset: 0; z-index: 60; pointer-events: none; 
 // Storage
 // =====================================================================
 const KEY = "healthTracker.v1";
-const AREAS = { core: "Core", lower: "Lower body", upper: "Upper body" };
+const AREAS = { upper: "Upper body", lower: "Lower body", full: "Full body", core: "Core" };
 const DEFAULTS = {
   v: 6,
   settings: {
@@ -410,7 +411,8 @@ const DEFAULTS = {
     exercises: {
       core: ["Crunches", "Bicycle crunches", "Reverse crunches", "Dead bugs", "Bird dogs", "Leg raises", "Flutter kicks", "Russian twists", "Hollow hold", "Plank", "Side plank"],
       lower: ["Bodyweight squats", "Goblet squats", "Lunges", "Step-ups", "Glute bridges", "Hip thrusts", "Romanian deadlifts", "Leg press", "Leg curls", "Leg extensions", "Calf raises"],
-      upper: ["Push-ups", "Bench press", "Dumbbell press", "Shoulder press", "Lateral raises", "Rows", "Lat pulldown", "Pull-ups", "Bicep curls", "Tricep extensions", "Chest fly"]
+      upper: ["Push-ups", "Bench press", "Dumbbell press", "Shoulder press", "Lateral raises", "Rows", "Lat pulldown", "Pull-ups", "Bicep curls", "Tricep extensions", "Chest fly"],
+      full: ["Deadlifts", "Kettlebell swings", "Burpees", "Thrusters", "Farmer's carry", "Turkish get-up", "Clean and press", "Circuit"]
     },
     // exercise goals: {id, area, ex, sets, reps, sec, weight}
     liftGoals: [],
@@ -1250,7 +1252,7 @@ const SPEC = {
       if (!e.intensity) e.intensity = "moderate";
     } },
   core: { title: "core exercise", added: "Core exercise logged",
-    rows: [[F("ex", "Exercise", "ex", { req: 1, list: "core" })], [SETS, REPS, F("sec", "Hold (sec)", "int", { min: 1, ph: "planks etc." })], [D()]],
+    rows: [[F("ex", "Exercise", "ex", { req: 1, list: "core" })], [SETS, REPS, F("sec", "Hold (sec)", "int", { min: 1, ph: "planks etc." })], [F("min", "Time spent (min)", "int", { min: 1, max: 600, ph: "optional" }), D()]],
     check(e) {
       if (!(e.sets >= 1)) return "Enter how many sets.";
       if (!e.reps && !e.sec) return "Enter reps per set (or a hold time for planks and other holds).";
@@ -1258,13 +1260,15 @@ const SPEC = {
       rememberEx("core", e.ex);
     } },
   strength: { title: "strength exercise", added: "Exercise logged",
-    rows: [[F("area", "Body area", "area")], [F("ex", "Exercise", "ex", { req: 1 })],
-      [SETS, F("reps", "Reps per set", "int", { req: 1, min: 1 }), F("weight", "Weight (lb)", "num", { step: "0.5", min: 0, ph: "bodyweight" })],
-      [F("min", "Time spent (min)", "int", { min: 1, max: 600, ph: "optional" }), D()]],
+    rows: [[F("area", "Category", "area", { core: 1 })], [F("ex", "Exercise", "ex", { req: 1 })],
+      [SETS, F("reps", "Reps per set", "int", { min: 1 }), F("weight", "Weight (lb)", "num", { step: "0.5", min: 0, ph: "bodyweight" })],
+      [F("sec", "Hold (sec)", "int", { min: 1, ph: "planks etc." }), F("min", "Time spent (min)", "int", { min: 1, max: 600, ph: "optional" }), D()]],
     check(e) {
       if (!e.area) e.area = "lower";
       const lock = lockCheck(e); if (lock) return lock;
-      if (!(e.sets >= 1) || !(e.reps >= 1)) return "Enter sets and reps.";
+      if (!(e.sets >= 1)) return "Enter how many sets.";
+      if (e.area === "core") { if (!e.reps && !e.sec) return "Enter reps per set (or a hold time for planks and other holds)."; e.weight = null; }
+      else { if (!(e.reps >= 1)) return "Enter sets and reps."; e.sec = null; }
       rememberEx(e.area, e.ex);
     } },
   liftGoals: { title: "exercise goal", added: "Goal added",
@@ -1297,7 +1301,7 @@ function fieldHtml(fd, v, vals) {
   }
   if (kind === "area") {
     const locked = lockMode() === "all";
-    return `<label>${label}<select name="area">${(fd.core ? ["core", "lower", "upper"] : ["lower", "upper"]).map(a =>
+    return `<label>${label}<select name="area">${(fd.core ? ["upper", "lower", "full", "core"] : ["upper", "lower", "full"]).map(a =>
       `<option value="${a}"${a === v ? " selected" : ""}${a === "upper" && locked && v !== "upper" ? " disabled" : ""}>${AREAS[a]}${a === "upper" && locked ? " 🔒 (needs clearance)" : ""}</option>`).join("")}</select></label>`;
   }
   if (kind === "textarea") return `<label>${label}<textarea name="${name}" rows="2"${req}${ph}>${esc(v)}</textarea></label>`;
@@ -1333,6 +1337,11 @@ const lastAdd = {};  // keeps date/area/sets between exercises logged in one sit
 function addEntry(k, f) {
   const e = readSpec(k, f), err = SPEC[k].check && SPEC[k].check(e, null);
   if (err) { alert(err); return false; }
+  if (k === "strength") logStrength = null;
+  if (k === "strength" && e.area === "core") {
+    const { area, weight, ...c } = e; db.core.push({ id: uid(), ...c }); lastAdd.strength = { date: e.date, area: "core", sets: e.sets };
+    save(); toast("Core exercise logged"); return;
+  }
   coll(k).push({ id: uid(), ...e });
   if (k === "core" || k === "strength") lastAdd[k] = { date: e.date, area: e.area, sets: e.sets };
   if (k === "cardio") { lastAdd.cardioType = actFor(e.type).name; logCardio = null; }
@@ -1638,7 +1647,7 @@ function viewHome() {
   const next = goals.find(g => !last || last.w > g);
   const pctAll = last ? Math.max(0, Math.min(100, (s.startWeight - last.w) / (s.startWeight - finalG) * 100)) : 0;
   const active = db.fasts.find(f => !f.end);
-  const cardio = sumMin(db.cardio, weekStart(t)), strength = sumMin(db.strength, weekStart(t));
+  const cardio = sumMin(db.cardio, weekStart(t)), strength = sumMin(liftLog(), weekStart(t));
   const coreWk = db.core.filter(x => x.date >= weekStart(t)), coreSets = coreWk.reduce((a, x) => a + (x.sets || 1), 0);
   const en = dayEnergy(t);
   const g = labGroups(), evals = Object.values(g).map(a => evalLab(a[a.length - 1]));
@@ -2140,7 +2149,7 @@ const cardioNet = c => { const r = cardioCalc(c); return r.active ? r.kcal : Mat
 const cardioKcalSum = (from, to) => db.cardio.filter(c => c.date >= from && c.date <= to).reduce((a, c) => a + cardioCalc(c).kcal, 0);
 function exerciseBurn(date) {
   return Math.round(db.cardio.filter(c => c.date === date).reduce((a, c) => a + cardioNet(c), 0)
-    + db.strength.filter(x => x.date === date).reduce((a, x) => a + 4 * restPerMin() * (x.min || 0), 0)); // strength ≈ 5 MET, minus rest
+    + liftLog().filter(x => x.date === date).reduce((a, x) => a + 4 * restPerMin() * (x.min || 0), 0)); // strength and core ≈ 5 MET, minus rest
 }
 function dayEnergy(date) {
   const ms = db.meals.filter(m => m.date === date), withCal = ms.filter(m => m.cal != null);
@@ -2438,6 +2447,7 @@ function viewFood() {
 // Fitness tab
 // =====================================================================
 const sumMin = (arr, from, to = "9999-12-31") => arr.filter(c => c.date >= from && c.date <= to).reduce((a, c) => a + (c.min || 0), 0);
+const liftLog = () => db.strength.concat(db.core.map(x => ({ ...x, area: "core", _core: true })));  // all strength work, core included
 function weekBars(arr, target) {
   const ws = weekStart(today()), weeks = [];
   for (let i = 7; i >= 0; i--) { const start = addDays(ws, -7 * i); weeks.push({ start, m: sumMin(arr, start, addDays(start, 6)) }); }
@@ -2471,13 +2481,15 @@ function goalList(goals) {
       <div style="display:flex;align-items:center;gap:2px">${p.hit ? '<span class="tag good">✓ Done</span>' : `<span class="n" style="font-size:22px;font-weight:700">${Math.round(p.pct)}%</span>`}${btnsFor("liftGoals", g)}</div>
       <div class="bar ${p.hit ? "good" : ""}"><span style="width:${p.pct}%"></span></div></div>`; }).join("");
 }
-const exRow = k => x => `<li><div class="grow"><div><b>${esc(x.ex)}</b> ${x.area === "upper" ? '<span class="tag red">Upper</span>' : ""}</div>
+const AREA_TAG = { upper: '<span class="tag red">Upper</span>', full: '<span class="tag">Full body</span>', core: '<span class="tag">Core</span>' };
+const liftRow = x => exRow(x._core ? "core" : "strength")(x);
+const exRow = k => x => `<li><div class="grow"><div><b>${esc(x.ex)}</b> ${AREA_TAG[x.area] || ""}</div>
   <div class="faint">${fmtDay(x.date)} · ${setsTxt(x)}</div></div>${x.min ? `<span class="num">${x.min} min</span>` : ""}${btnsFor(k, x)}</li>`;
 const goalsLink = `<small><a href="#" data-tab="settings">Edit in Settings</a></small>`;
 function viewFitness() {
   if (fView !== "strength") fView = "cardio";
   const seg = `<div class="seg">${[["cardio", "Cardio"], ["strength", "Strength"]].map(([k, l]) => `<button class="${fView === k ? "on" : ""}" data-act="fview" data-v="${k}">${l}</button>`).join("")}</div>`;
-  return seg + (fView === "strength" ? fitStrength() + fitCore() + guideCard() : fitCardio());
+  return seg + (fView === "strength" ? fitStrength() + guideCard() : fitCardio());
 }
 const cardioRow = c => { const a = actFor(c.type), r = cardioCalc(c);
   const bits = [fmtDay(c.date), c.speed ? `${nf(c.speed)} mph` : "", c.incline ? `${nf(c.incline)}% incline` : "", c.where === "treadmill" ? "treadmill" : "",
@@ -2488,11 +2500,10 @@ function fitCardio() {
   const s = db.settings, t = today(), ws = weekStart(t);
   const thisWeek = newestFirst(db.cardio.filter(c => c.date >= ws)), older = newestFirst(db.cardio.filter(c => c.date < ws));
   const calToday = cardioKcalSum(t, t), calWeek = cardioKcalSum(ws, addDays(ws, 6));
-  return `
+  return `<button class="btn block big-action" data-act="logCardio" id="cardioForm">+ Log cardio</button>
   ${weekHero("Cardio this week", sumMin(db.cardio, ws), s.cardioTarget,
     `<div class="kcalbar"><div><span class="faint">Today</span><b class="n">≈ ${calToday}</b><span class="faint"> cal</span></div><div><span class="faint">This week</span><b class="n">≈ ${calWeek}</b><span class="faint"> cal</span></div></div>
-    <p class="faint" style="margin:4px 0 0">Calories burned are estimates.</p>
-    <button class="btn block" data-act="logCardio" id="cardioForm" style="margin-top:16px">+ Log activity</button>`,
+    <p class="faint" style="margin:4px 0 0">Calories burned are estimates.</p>`,
     thisWeek.length ? `<p class="faint" style="margin:18px 0 0;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Recent sessions</p><ul class="list">${thisWeek.map(cardioRow).join("")}</ul>`
       : `<p class="faint" style="margin:14px 0 0">No sessions yet this week.</p>`)}
   <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.cardioTarget} min</small></h2>${weekBars(db.cardio, s.cardioTarget)}</div>
@@ -2537,39 +2548,34 @@ function logCardioSheet() {
       <button class="btn block">Save activity</button></form>`;
 }
 function fitStrength() {
-  const s = db.settings, t = today(), ws = weekStart(t), lm = lockMode();
-  const thisWeek = newestFirst(db.strength.filter(x => x.date >= ws)), older = newestFirst(db.strength.filter(x => x.date < ws));
-  const goals = s.liftGoals.filter(g => g.area === "lower" || (g.area === "upper" && !blocks(exMove(g.ex, "upper"))));
+  const s = db.settings, t = today(), ws = weekStart(t), lm = lockMode(), all = liftLog();
+  const thisWeek = newestFirst(all.filter(x => x.date >= ws)), older = newestFirst(all.filter(x => x.date < ws));
+  const coreWk = thisWeek.filter(x => x._core), coreSets = coreWk.reduce((a, x) => a + (x.sets || 1), 0);
+  const goals = s.liftGoals.filter(g => g.area !== "upper" || !blocks(exMove(g.ex, "upper")));
   const nLocked = s.liftGoals.filter(g => g.area === "upper" && blocks(exMove(g.ex, "upper"))).length;
-  return `
-  ${weekHero("Strength this week", sumMin(db.strength, ws), s.strengthTarget,
-    `<form data-form="add" data-k="strength" id="strengthForm" style="margin-top:18px">${specFields("strength", { date: t, area: "lower", sets: 3, ...lastAdd.strength })}
-      <button class="btn block">Log exercise</button>
-      <p class="faint">Logging a whole workout? Add each exercise, and put the time on one of them (or split it) — it all counts toward your weekly minutes.</p></form>`,
-    thisWeek.length ? `<ul class="list" style="margin-top:10px">${thisWeek.map(exRow("strength")).join("")}</ul>` : "")}
+  return `<button class="btn block big-action" data-act="logStrength">+ Log workout</button>
+  ${weekHero("Strength this week", sumMin(all, ws), s.strengthTarget,
+    coreWk.length ? `<p class="muted" style="margin:12px 0 0">Core: <b>${coreSets} set${coreSets === 1 ? "" : "s"}</b> · ${new Set(coreWk.map(x => exKey(x.ex))).size} exercise${new Set(coreWk.map(x => exKey(x.ex))).size === 1 ? "" : "s"}</p>` : "",
+    thisWeek.length ? `<p class="faint" style="margin:18px 0 0;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px">This week</p><ul class="list">${thisWeek.map(liftRow).join("")}</ul>`
+      : `<p class="faint" style="margin:14px 0 0">Nothing logged yet this week.</p>`)}
   ${lm === "off" ? "" : `<div class="card locked"><div class="lock">🔒</div><h2 style="justify-content:center">${lm === "push" ? "Pushing & overhead locked" : "Upper-body exercises locked"}</h2>
     <p class="muted">${lm === "push" ? "Push-ups, presses, dips and overhead work stay locked for your shoulder. Rows, pulldowns, curls and other pulling work are open, along with core and lower body" : "Push-ups, presses, rows and other upper-body work unlock once your physical therapist or doctor clears you"}${nLocked ? ` — ${nLocked} goal${nLocked === 1 ? " is" : "s are"} waiting` : ""}.</p>
     <button class="btn secondary" data-act="clearShoulders">I've been cleared</button></div>`}
-  <div class="card"><h2>Strength goals ${goalsLink}</h2>
-    ${goals.length ? goalList(goals) : `<p class="faint">No strength goals yet — add them in Settings.</p>`}
+  <div class="card"><h2>Goals ${goalsLink}</h2>
+    ${goals.length ? goalList(goals) : `<p class="faint">No strength or core goals yet — add them in Settings.</p>`}
     ${lm === "off" && s.clearedDate ? `<p class="faint">Cleared for upper-body work on ${fmtD(s.clearedDate)}. Ease in and stop if anything pinches.</p>` : ""}</div>
-  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.strengthTarget} min</small></h2>${weekBars(db.strength, s.strengthTarget)}</div>
-  ${older.length ? `<div class="card"><h2>Earlier workouts</h2>${moreList(older, 10, exRow("strength"))}</div>` : ""}`;
+  <div class="card"><h2>Last 8 weeks <small>dashed line = ${s.strengthTarget} min</small></h2>${weekBars(all, s.strengthTarget)}</div>
+  ${older.length ? `<div class="card"><h2>Earlier workouts</h2>${moreList(older, 10, liftRow)}</div>` : ""}`;
 }
-function fitCore() {
-  const s = db.settings, t = today(), ws = weekStart(t);
-  const wk = db.core.filter(x => x.date >= ws), sets = wk.reduce((a, x) => a + (x.sets || 1), 0);
-  const nEx = new Set(wk.map(x => exKey(x.ex))).size;
-  const goals = s.liftGoals.filter(g => g.area === "core");
-  return `
-  <div class="card"><h2>Core <small>this week: ${sets} set${sets === 1 ? "" : "s"}${nEx ? ` · ${nEx} exercise${nEx === 1 ? "" : "s"}` : ""}</small></h2>
-    <form data-form="add" data-k="core" id="coreForm">${specFields("core", { date: t, sets: 3, ...lastAdd.core })}
-      <button class="btn block">Log exercise</button>
-      <p class="faint">Pick from the list or type any exercise — new names are saved for next time.${lockMode() === "off" ? "" : " Planks and other moves on your hands load your shoulders, so check with your PT or doctor before doing those."}</p></form>
-  </div>
-  <div class="card"><h2>Core goals ${goalsLink}</h2>
-    ${goals.length ? goalList(goals) : `<p class="faint">No core goals yet — add them in Settings.</p>`}</div>
-  <div class="card"><h2>Recent core work</h2>${moreList(newestFirst(db.core), 10, exRow("core")) || `<p class="faint">Nothing logged yet.</p>`}</div>`;
+// "+ Log workout" sheet: category, exercise, sets — core goes to the core log
+let logStrength = null; // { area } while the sheet is open
+function logStrengthSheet() {
+  const vals = { date: today(), area: "lower", sets: 3, ...lastAdd.strength, ...(logStrength.area ? { area: logStrength.area } : {}) };
+  return `<div class="grab"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Log workout</h3>
+      <button class="icon-btn" data-act="closeSheet" aria-label="Close">✕</button></div>
+    <form data-form="add" data-k="strength" id="strengthForm" style="margin-top:12px">${specFields("strength", vals)}
+      <button class="btn block">Save exercise</button>
+      <p class="faint">Logging a whole workout? Save each exercise and put the time on one of them — it all counts toward your weekly minutes. Core holds (planks) use the hold time instead of reps.${lockMode() === "off" ? "" : " Planks and other moves on your hands load your shoulders — check with your PT or doctor first."}</p></form>`;
 }
 
 // =====================================================================
@@ -3737,6 +3743,7 @@ function confetti(opt = {}) {
 // Collapsible cards: every card with a heading can fold; state is remembered per section
 // =====================================================================
 const COLLAPSED_BY_DEFAULT = new Set(["All readings", "All weigh-ins", "Recent fasts", "Earlier sessions", "Earlier workouts", "Recent core work", "Food list", "My exercises", "Danger zone", "Exercise guide", "Where the levels come from", "Plan settings", "How this works"]);
+const ALWAYS_OPEN = new Set(["Cardio this week", "Strength this week"]);
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem(KEY + ".collapsed")) || {}; } catch (e) {}
 function decorateCards(root) {
@@ -3753,7 +3760,7 @@ function decorateCards(root) {
     [...h.childNodes].forEach(n => right.appendChild(n));
     right.insertAdjacentHTML("beforeend", '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
     h.append(lead, right);
-    const isC = key in collapsed ? collapsed[key] : COLLAPSED_BY_DEFAULT.has(title);
+    const isC = ALWAYS_OPEN.has(title) ? false : key in collapsed ? collapsed[key] : COLLAPSED_BY_DEFAULT.has(title);
     card.classList.add("foldable"); card.classList.toggle("collapsed", isC);
     h.dataset.key = key; h.tabIndex = 0; h.setAttribute("role", "button"); h.setAttribute("aria-expanded", String(!isC));
   });
@@ -4007,13 +4014,14 @@ function labSheet(k) {
 }
 function renderSheet() {
   const sh = $("#sheet"), bg = $("#sheetBg");
-  const html = editing ? editSheet() : logCardio ? logCardioSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : syncGuide != null ? syncGuideSheet() : pasteSync ? pasteSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
-  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; syncGuide = null; pasteSync = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
+  const html = editing ? editSheet() : logCardio ? logCardioSheet() : logStrength ? logStrengthSheet() : openScan ? scanSheet() : openGuide ? guideSheet(openGuide) : syncGuide != null ? syncGuideSheet() : pasteSync ? pasteSheet() : openLab && current === "labs" ? labSheet(openLab) : "";
+  if (!html) { openLab = null; editing = null; openGuide = null; openScan = null; logCardio = null; logStrength = null; syncGuide = null; pasteSync = null; sh.classList.remove("open"); bg.classList.remove("open"); return; }
   sh.innerHTML = html;
   sh.classList.add("open"); bg.classList.add("open");
   if (editing && editing.k === "cardio") { const f = $("form", sh), it = db.cardio.find(x => String(x.id) === editing.id); if (it && it.src === "health") f.dataset.src = "health"; syncCardioForm(f); }
   if (logCardio && logCardio.step === "form") syncCardioForm($("form", sh));
-  if (editing || openGuide || openScan || logCardio || syncGuide != null || pasteSync) { sh.scrollTop = 0; return; }
+  if (logStrength) { const f = $("form", sh), ex = f && f.elements.ex; if (ex) ex.setAttribute("list", "dl-" + f.elements.area.value); }
+  if (editing || openGuide || openScan || logCardio || logStrength || syncGuide != null || pasteSync) { sh.scrollTop = 0; return; }
   const ch = $("#labChart", sh);
   if (ch) {
     const arr = labGroups()[openLab].filter(l => num(l.value) != null);
@@ -4243,12 +4251,15 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (openLab || editing)) { if (editing) editing = null; else openLab = null; renderSheet(); } });
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { e.preventDefault(); energyBack = false; syncGuide = null; pasteSync = null; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
+  if (tabBtn) { e.preventDefault(); logStrength = null; energyBack = false; syncGuide = null; pasteSync = null; openLab = null; editing = null; openGuide = null; logCardio = null; if (tabBtn.dataset.fv) fView = tabBtn.dataset.fv; go(tabBtn.dataset.tab); return; }
   const ct = e.target.closest(".foldable > h2"); if (ct && !e.target.closest("a, button, select, input")) { toggleCard(ct); return; }
   const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT") return;
   const act = el.dataset.act;
   if (act === "settings") { e.preventDefault(); openLab = null; editing = null; go(current === "settings" ? "home" : "settings"); return; }
-  if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; if (el.dataset.focus === "cardioForm") { go(el.dataset.go); logCardio = { step: "group" }; renderSheet(); return; } go(el.dataset.go, el.dataset.focus); return; }
+  if (act === "quick") { if (el.dataset.fv) fView = el.dataset.fv; if (el.dataset.focus === "cardioForm") { go(el.dataset.go); logCardio = { step: "group" }; renderSheet(); return; }
+    if (el.dataset.focus === "strengthForm" || el.dataset.focus === "coreForm") { fView = "strength"; go(el.dataset.go); logStrength = { area: el.dataset.focus === "coreForm" ? "core" : null }; renderSheet(); return; }
+    go(el.dataset.go, el.dataset.focus); return; }
+  if (act === "logStrength") { logStrength = { area: null }; renderSheet(); return; }
   if (act === "wview") { wView = el.dataset.v; render(); return; }
   if (act === "fview") { fView = el.dataset.v; render(); return; }
   if (act === "mbAdd") { const rows = mbAdd(); if (rows.some(r => r.cal == null)) toast("Type the calories for the new item"); const inp = rows.some(r => r.edit) ? $(`[data-ri="${draft.rows.length - 1}"] [data-f=${rows[rows.length - 1].name ? "cal" : "name"}]`) : $("[data-draft=q]"); if (inp) inp.focus(); return; }
@@ -4308,7 +4319,7 @@ document.addEventListener("click", e => {
   }
   if (act === "edit") { editing = { k: el.dataset.k, id: el.dataset.id }; renderSheet(); return; }
   if (act === "openLab") { openLab = el.dataset.k; renderSheet(); return; }
-  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else if (syncGuide != null) syncGuide = null; else if (pasteSync) pasteSync = null; else openLab = null; renderSheet(); return; }
+  if (act === "closeSheet") { if (editing) editing = null; else if (logCardio) logCardio = null; else if (logStrength) logStrength = null; else if (openScan) openScan = null; else if (openGuide) openGuide = null; else if (syncGuide != null) syncGuide = null; else if (pasteSync) pasteSync = null; else openLab = null; renderSheet(); return; }
   if (act === "guide") { openGuide = el.dataset.id; renderSheet(); return; }
   if (act === "coachSel") {
     coachSel = coachSel === el.dataset.id ? null : el.dataset.id; render();
