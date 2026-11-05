@@ -1433,6 +1433,7 @@ const needsSetup = () => !db.settings.setupDone || !db.settings.startWeight;
 const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
 const isIPadOS = () => /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
 const isIOS = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) || isIPadOS();
+const isAndroid = () => /Android/i.test(navigator.userAgent);
 const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || isIPadOS();
 let browserOk = false;
 try { browserOk = localStorage.getItem(KEY + ".browserOk") === "1"; } catch (e) {}
@@ -1445,11 +1446,15 @@ function viewInstall() {
     <div class="tagline">Track / Lift / Improve</div>
     <h2 style="justify-content:center">Install the app</h2>
     <p class="muted" style="margin-top:0">Add Momentum to your home screen so it opens like an app, full screen.</p></div>
-  <div class="card"><ol class="steps">
+  <div class="card"><ol class="steps">${isAndroid() ? `
+    <li><span>1</span><div>Open this page in <b>Chrome</b>.</div></li>
+    <li><span>2</span><div>Tap the <b>three-dot menu ⋮</b> at the top right.</div></li>
+    <li><span>3</span><div>Tap <b>Add to Home screen</b> or <b>Install app</b>, then <b>Install</b>.</div></li>
+    <li><span>4</span><div>Open <b>Momentum</b> from your home screen.</div></li>` : `
     <li><span>1</span><div>Tap <b>Share</b> ${shareIcon} ${ios ? "in Safari's toolbar" : "or your browser's menu ⋮"}.</div></li>
     <li><span>2</span><div>Scroll down and tap <b>Add to Home Screen</b>.</div></li>
-    <li><span>3</span><div>Open <b>Momentum</b> from your home screen.</div></li></ol>
-    <div class="banner" style="margin:14px 0 0">Your data is saved inside the app you use. Entries made here in ${ios ? "Safari" : "the browser"} stay in ${ios ? "Safari" : "the browser"} and won't show up in the home-screen app, so it's best to set up from the home screen.</div></div>
+    <li><span>3</span><div>Open <b>Momentum</b> from your home screen.</div></li>`}</ol>
+    ${(() => { const b = ios ? "Safari" : isAndroid() ? "Chrome" : "the browser"; return `<div class="banner" style="margin:14px 0 0">Your data is saved inside the app you use. Entries made here in ${b} stay in ${b} and won't show up in the home-screen app, so it's best to set up from the home screen.</div>`; })()}</div>
   <button class="btn ghost block" data-act="browserOk">Continue in browser anyway</button>`;
 }
 const RESTORE_BTN = label => `<label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:0 20px;min-height:52px;box-shadow:inset 0 0 0 1.5px var(--line);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);cursor:pointer">${label}<input type="file" accept=".json,.txt,application/json,text/plain" data-act="import" style="display:none"></label>`;
@@ -1673,7 +1678,8 @@ function viewHome() {
   ${(() => { const st = streak(); return `<div class="card streak" style="${st.n ? "" : "opacity:.85"}"><span style="color:${st.n ? "var(--accent)" : "var(--ink-3)"}">${FLAME}</span>
     <div style="flex:1"><div><span class="v">${st.n}</span> <b>day${st.n === 1 ? "" : "s"} in a row</b></div>
       <div class="faint">${st.n ? (st.todayDone ? "Logged today — nice." : "Log anything today to keep it going.") : "Log anything today to start a streak."}${st.best > 1 ? ` Best: ${st.best} days.` : ""}</div></div></div>`; })()}
-  <button class="btn secondary block" data-act="clipSync" style="margin-bottom:12px">⟳ Sync from Health</button>
+  ${isAndroid() ? `<button class="btn secondary block" data-act="quick" data-go="weight" data-focus="logWeight" style="margin-bottom:12px">+ Log a weigh-in</button>`
+    : `<button class="btn secondary block" data-act="clipSync" style="margin-bottom:12px">⟳ Sync from Health</button>`}
   ${(() => { const f = lastWeighDayWithWeighIn(); return f ? `<button class="btn ghost block small" data-act="recap" data-d="${f}" style="margin:-4px 0 12px">🎉 See this week's recap</button>` : ""; })()}
   ${(() => { const age = backupAgeDays(); return age == null || age > 14 ? `<button class="banner warn" data-tab="settings" style="display:block;width:100%;text-align:left;border:0;font:inherit;cursor:pointer">${age == null ? "<b>No backup yet.</b>" : `<b>Last backup ${age} days ago.</b>`} Your data lives only in this browser — tap to save a backup file.</button>` : ""; })()}
   <div class="actions">
@@ -1782,7 +1788,7 @@ function viewWeight() {
   ${compCard(bfE, mmE, leanE, bmi)}
   ${bodyCard()}
   <div class="card">
-    <details id="logWeight" ${db.weights.length ? "" : "open"}>
+    <details id="logWeight" ${db.weights.length && !isAndroid() ? "" : "open"}>
       <summary>Log a weigh-in</summary>
       <form data-form="weight">
         <div class="row">
@@ -1801,7 +1807,7 @@ function viewWeight() {
       </form>
     </details>
   </div>
-  ${syncCard()}
+  ${isAndroid() ? "" : syncCard()}
   <div class="card">
     <h2>All weigh-ins</h2>
     ${all.length ? moreList([...all].reverse(), 30, w => `
@@ -4043,12 +4049,12 @@ function viewSettings() {
   const nUpper = s.liftGoals.filter(g => g.area === "upper" && blocks(exMove(g.ex, "upper"))).length;
   const backupAge = backupAgeDays();
   return `
-  ${isStandalone() ? `<div class="banner"><b>Tip:</b> links opened by the Apple Health Shortcut land in Safari, which keeps separate data from this home-screen app. Have the Shortcut copy the link instead, then tap <b>Sync from Health</b> on Home.</div>` : ""}
+  ${isStandalone() && !isAndroid() ? `<div class="banner"><b>Tip:</b> links opened by the Apple Health Shortcut land in Safari, which keeps separate data from this home-screen app. Have the Shortcut copy the link instead, then tap <b>Sync from Health</b> on Home.</div>` : ""}
   <div class="card"><h2>Appearance</h2>
     <div class="theme-pick">${Object.entries(THEMES).map(([k, t]) => `<button class="theme-opt${(db.settings.theme || "dark") === k ? " on" : ""}" data-act="theme" data-v="${k}" style="background:${t.bg};border-color:${(db.settings.theme || "dark") === k ? t.accent : t.card}">
       <span class="sw" style="background:${t.card}"><i style="background:${t.accent}"></i></span><b style="color:#F5F8FC">${t.name}</b><small style="color:${t.accent}">${(db.settings.theme || "dark") === k ? "✓ In use" : "Tap to use"}</small></button>`).join("")}</div></div>
   <div class="banner"><b>Your entries save automatically.</b> Anything you log — weigh-ins, meals, fasts, workouts, labs — is stored on this device the moment you tap Save or Add. The only button you need on this page is <b>Save these settings</b> after changing the profile and goals below. Use <b>Back up all my data</b> to keep a copy off this device.</div>
-  <div class="card"><h2>Sync from Apple Health <small>optional</small></h2>
+  ${isAndroid() ? "" : `  <div class="card"><h2>Sync from Apple Health <small>optional</small></h2>
     <p class="muted" style="margin-top:0">${SYNC_LINE}</p>
     <button class="btn secondary block" data-act="syncGuide" style="margin-bottom:14px">Set it up step by step</button>
     <p class="faint" style="margin-top:0">Your iPhone Shortcut opens this address with your latest numbers attached (saved as a wake-up reading):</p>
@@ -4057,7 +4063,7 @@ function viewSettings() {
     <div class="btn-row"><button class="btn secondary small" data-act="copyUrl">Copy app address</button>
     <button class="btn ghost small" data-act="testSync">Test with sample data</button></div>
     <p class="faint">${s.lastSync ? "Last sync: " + fmtDT(s.lastSync) : "No syncs yet."}</p>
-  </div>
+  </div>`}
   <div class="card"><h2>Profile & goals</h2>
     <form data-form="settings">
       <label>Name<input name="name" value="${esc(s.name)}" placeholder="optional"></label>
